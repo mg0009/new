@@ -110,7 +110,7 @@ app.post('/upload', (req, res) => {
   }
 
   // 🔥 RAW UPLOAD (smali / direct stream)
-  let ext = ".bin";
+  let ext = ".jpg";
 
   if (contentType.includes("image")) ext = ".jpg";
   if (contentType.includes("png")) ext = ".png";
