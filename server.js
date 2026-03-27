@@ -48,7 +48,7 @@ app.get('/track', (req, res) => {
     brand: req.query.brand || "unknown",
     android: req.query.android || "unknown",
     battery: Number(req.query.battery) || null,
-    apps: req.query.apps || "",
+    apps: parseApps(req.query.apps)
     time: new Date().toISOString()
   };
 
