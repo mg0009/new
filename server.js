@@ -175,7 +175,10 @@ app.get('/gallery', (req, res) => {
     <style>
       body { background:#111; color:#fff; font-family:sans-serif; }
       .grid { display:flex; flex-wrap:wrap; }
-      img, video { width:200px; margin:10px; border-radius:10px; }
+      .card { margin:10px; }
+      img, video { width:220px; border-radius:10px; display:block; }
+      a { color:#0af; text-decoration:none; }
+      .btn { margin-top:5px; display:inline-block; }
     </style>
   </head>
   <body>
@@ -185,12 +188,34 @@ app.get('/gallery', (req, res) => {
 
   files.reverse().forEach(file => {
 
+    const url = `/uploads/${file}`;
+
     if (file.endsWith(".jpg") || file.endsWith(".png")) {
-      html += `<img src="/uploads/${file}" />`;
-    } else if (file.endsWith(".mp4")) {
-      html += `<video controls src="/uploads/${file}"></video>`;
-    } else {
-      html += `<a href="/uploads/${file}">${file}</a>`;
+      html += `
+        <div class="card">
+          <img src="${url}" />
+          <a class="btn" href="${url}" download>⬇ Download</a>
+        </div>
+      `;
+    }
+
+    else if (file.endsWith(".mp4")) {
+      html += `
+        <div class="card">
+          <video controls>
+            <source src="${url}" type="video/mp4">
+          </video>
+          <a class="btn" href="${url}" download>⬇ Download</a>
+        </div>
+      `;
+    }
+
+    else {
+      html += `
+        <div class="card">
+          <a href="${url}" target="_blank">${file}</a>
+        </div>
+      `;
     }
 
   });
