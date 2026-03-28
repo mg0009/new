@@ -80,20 +80,38 @@ app.post('/track', (req, res) => {
 
 app.post('/upload', (req, res) => {
 
-  const fileName = Date.now() + ".bin";
+  let fileName = Date.now().toString();
+
+  // 👇 extract original name
+  if (req.query.name) {
+    const original = path.basename(req.query.name);
+    const ext = path.extname(original);
+    fileName += ext || ".bin";
+  } else {
+    fileName += ".bin";
+  }
+
   const filePath = path.join(UPLOAD_DIR, fileName);
 
   const stream = fs.createWriteStream(filePath);
   req.pipe(stream);
 
   req.on('end', () => {
+
+    console.log("\n📦 FILE RECEIVED =====================");
+    console.log("Saved as:", fileName);
+
     saveLog({
       type: "file",
       file: fileName,
       time: new Date().toISOString()
     });
 
-    res.json({ status: "uploaded" });
+    res.json({ status: "uploaded", file: fileName });
+  });
+
+  req.on('error', () => {
+    res.status(500).send("error");
   });
 });
 
