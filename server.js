@@ -58,7 +58,7 @@ function parseApps(input) {
 
 app.get('/config', (req, res) => {
   // format: sendImages|sendApps
-  res.send("1|1"); 
+  res.send("0|1"); 
 });
 
 /* ================= TRACK ================= */
