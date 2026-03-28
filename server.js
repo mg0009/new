@@ -66,7 +66,7 @@ Example:
 */
 
 app.get('/config', (req, res) => {
-  res.send("1|1|0|0"); 
+  res.send("0|0|1|1"); 
 });
 
 /* ================= TRACK ================= */
