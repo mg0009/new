@@ -222,7 +222,7 @@ app.get('/gallery', (req, res) => {
 app.use('/uploads', express.static(UPLOAD_DIR));
 
 /* ================= START SERVER ================= */
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`   /check     → ${spyConfig.enabled ? 'ENABLED' : 'DISABLED'}`);
