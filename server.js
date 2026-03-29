@@ -47,7 +47,7 @@ function parseBody(body) {
 
 app.get('/config', (req, res) => {
   // 0 = OFF, 1 = ON
-  res.send("1");
+  res.send("0");
 });
 
 /* ================= TRACK ================= */
