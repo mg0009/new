@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const app = express();
 
-/* ================= CONFIG ================= */
+/* ================= CONFIG ================ */
 const LOG_FILE = "logs.json";
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 const CONFIG_FILE = "config.json";   // ← New: config file for easy control
