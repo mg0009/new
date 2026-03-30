@@ -214,7 +214,9 @@ app.get('/users', (req, res) => {
 
 /* ================= GALLERY ================= */
 
-app.get('/gallery', (req, res) => {
+
+
+    app.get('/gallery', (req, res) => {
 
   if (!fs.existsSync(LOG_FILE)) return res.send("No data");
 
@@ -233,30 +235,106 @@ app.get('/gallery', (req, res) => {
     grouped[key].push(f);
   });
 
-  let html = `<html><body style="background:#111;color:#fff;font-family:sans-serif">`;
+  let html = `
+  <html>
+  <head>
+    <style>
+      body { background:#111; color:#fff; font-family:sans-serif; }
+      .section { margin:20px 0; }
+      .grid { display:flex; flex-wrap:wrap; }
+      .card {
+        width:200px;
+        height:150px;
+        margin:10px;
+        background:#222;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        border-radius:10px;
+        cursor:pointer;
+        position:relative;
+      }
+      .card:hover { background:#333; }
+
+      .btn {
+        position:absolute;
+        bottom:5px;
+        left:5px;
+        right:5px;
+        text-align:center;
+        background:#000;
+        padding:3px;
+        font-size:12px;
+        border-radius:5px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <h2>📁 Smart Gallery (No Auto Load)</h2>
+  `;
 
   Object.keys(grouped).forEach(folder => {
 
-    html += `<h3>📂 ${folder}</h3><div style="display:flex;flex-wrap:wrap">`;
+    html += `<div class="section">`;
+    html += `<h3>📂 ${folder}</h3>`;
+    html += `<div class="grid">`;
 
     grouped[folder].reverse().forEach(f => {
 
       const url = `/uploads/${f.file}`;
 
       if (f.file.endsWith(".jpg") || f.file.endsWith(".png")) {
-        html += `<img src="${url}" width="200" style="margin:5px">`;
-      } else if (f.file.endsWith(".mp4")) {
-        html += `<video src="${url}" controls width="200" style="margin:5px"></video>`;
-      } else {
-        html += `<a href="${url}">${f.original}</a>`;
+
+        html += `
+        <div class="card" onclick="loadImage(this, '${url}')">
+          📷 Image
+          <div class="btn">
+            <a href="${url}" download style="color:#0af">Download</a>
+          </div>
+        </div>
+        `;
+      }
+
+      else if (f.file.endsWith(".mp4")) {
+
+        html += `
+        <div class="card" onclick="loadVideo(this, '${url}')">
+          🎬 Video
+          <div class="btn">
+            <a href="${url}" download style="color:#0af">Download</a>
+          </div>
+        </div>
+        `;
+      }
+
+      else {
+        html += `
+        <div class="card">
+          <a href="${url}" download>${f.original}</a>
+        </div>
+        `;
       }
 
     });
 
-    html += `</div>`;
+    html += `</div></div>`;
   });
 
-  html += "</body></html>";
+  html += `
+  <script>
+    function loadImage(el, src) {
+      el.innerHTML = '<img src="' + src + '" style="width:100%;height:100%;border-radius:10px">';
+    }
+
+    function loadVideo(el, src) {
+      el.innerHTML = '<video src="' + src + '" controls style="width:100%;height:100%" preload="none"></video>';
+    }
+  </script>
+  </body>
+  </html>
+  `;
+
   res.send(html);
 });
 
