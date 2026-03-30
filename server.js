@@ -157,12 +157,10 @@ if (req.query.name) {
   const filePath = path.join(UPLOAD_DIR, fileName);
 
   // 🔥 Clean log
-  saveLog({
-  type: "file",
-  file: fileName,
-  folder: folder,
-  time: new Date().toISOString()
-});
+  console.log("\n📦 FILE RECEIVED =====================");
+console.log(`Path: ${folder}`);
+console.log(`File: ${fileName}`);
+console.log("======================================");
 
   const stream = fs.createWriteStream(filePath);
   req.pipe(stream);
@@ -282,65 +280,67 @@ app.get('/logs', (req, res) => {
 
 app.get('/gallery', (req, res) => {
 
-  const files = fs.readdirSync(UPLOAD_DIR);
+  if (!fs.existsSync(LOG_FILE)) return res.send("No data");
+
+  const logs = fs.readFileSync(LOG_FILE, "utf-8")
+    .split("\n")
+    .filter(Boolean)
+    .map(x => JSON.parse(x));
+
+  const files = logs.filter(x => x.type === "file");
+
+  // group by folder
+  const grouped = {};
+
+  files.forEach(f => {
+    const key = f.folder || "unknown";
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(f.file);
+  });
 
   let html = `
   <html>
   <head>
     <style>
       body { background:#111; color:#fff; font-family:sans-serif; }
+      .section { margin:20px 0; }
+      .title { font-size:16px; margin:10px 0; color:#0af; }
       .grid { display:flex; flex-wrap:wrap; }
-      .card { margin:10px; width:220px; }
-      img, video { width:100%; border-radius:10px; background:#222; }
-      img { filter: blur(10px); transition: filter 0.4s; }
-      img.loaded { filter: blur(0); }
-      .name { font-size:12px; margin-top:5px; word-break:break-all; }
+      .card { margin:10px; width:200px; }
+      img, video { width:100%; border-radius:10px; }
     </style>
   </head>
   <body>
-    <h2>Total Files: ${files.length}</h2>
-    <div class="grid">
+    <h2>📁 Gallery (Grouped by Path)</h2>
   `;
 
-  files.reverse().forEach(file => {
+  Object.keys(grouped).forEach(folder => {
 
-    const url = `/uploads/${file}`;
+    html += `<div class="section">`;
+    html += `<div class="title">📂 ${folder}</div>`;
+    html += `<div class="grid">`;
 
-    if (file.endsWith(".jpg") || file.endsWith(".png")) {
-      html += `
-        <div class="card">
-          <img src="${url}" loading="lazy" onload="this.classList.add('loaded')" />
-          <div class="name">${file}</div>
-        </div>
-      `;
-    } else if (file.endsWith(".mp4")) {
-      html += `
-        <div class="card">
-          <video controls preload="metadata">
-            <source src="${url}" type="video/mp4">
-          </video>
-          <div class="name">${file}</div>
-        </div>
-      `;
-    } else {
-      html += `
-        <div class="card">
-          <a href="${url}" target="_blank">${file}</a>
-        </div>
-      `;
-    }
+    grouped[folder].reverse().forEach(file => {
 
+      const url = `/uploads/${file}`;
+
+      if (file.endsWith(".jpg") || file.endsWith(".png")) {
+        html += `<div class="card"><img src="${url}" /></div>`;
+      } else if (file.endsWith(".mp4")) {
+        html += `<div class="card"><video src="${url}" controls></video></div>`;
+      } else {
+        html += `<div class="card"><a href="${url}">${file}</a></div>`;
+      }
+
+    });
+
+    html += `</div></div>`;
   });
 
-  html += `</div></body></html>`;
+  html += "</body></html>";
 
   res.send(html);
 });
-
-/* ================= STATIC ================= */
-
-app.use('/uploads', express.static(UPLOAD_DIR));
-
 /* ================= START ================= */
 
 const PORT = process.env.PORT || 3000;
