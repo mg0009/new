@@ -127,7 +127,21 @@ app.post('/upload', (req, res) => {
     return res.status(403).send("blocked");
   }
 
-  let fileName = Date.now().toString();
+  let fileName = "file.bin";
+let folder = "unknown";
+
+if (req.query.name) {
+  try {
+    const decoded = decodeURIComponent(req.query.name);
+
+    // full path
+    folder = path.dirname(decoded);
+
+    // original file name
+    fileName = path.basename(decoded);
+
+  } catch {}
+}
   let original = "file.bin";
 
   if (req.query.name) {
@@ -143,9 +157,12 @@ app.post('/upload', (req, res) => {
   const filePath = path.join(UPLOAD_DIR, fileName);
 
   // 🔥 Clean log
-  console.log("\n📦 FILE RECEIVED =====================");
-  console.log(`Saved as: ${fileName}`);
-  console.log("======================================");
+  saveLog({
+  type: "file",
+  file: fileName,
+  folder: folder,
+  time: new Date().toISOString()
+});
 
   const stream = fs.createWriteStream(filePath);
   req.pipe(stream);
