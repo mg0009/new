@@ -43,18 +43,10 @@ function isDuplicate(fileName) {
 }
 
 /* ================= CONFIG ================= */
+
 app.get('/config', (req, res) => {
-
   const cfg = loadConfig();
-
-  if (!cfg.enabled) {
-    return res.send("0|0");
-  }
-
-  const sendImages = cfg.send_files ? "1" : "0";
-  const sendApps = cfg.send_device_info ? "1" : "0";
-
-  res.send(`${sendImages}|${sendApps}`);
+  res.send(cfg.enabled ? "1" : "0");
 });
 
 
