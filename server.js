@@ -196,6 +196,9 @@ const u = g.info;
 
 html += `
 <div class="box">
+  <h2>Device</h2>
+</div>
+`;
   <h2>📱 ${u.brand} ${u.model}</h2>
   IP: ${u.ip}<br>
   Battery: ${u.battery}%<br>
