@@ -43,7 +43,16 @@ function isDuplicate(fileName) {
 }
 
 /* ================= CONFIG ================= */
+app.get('/logs', (req, res) => {
+  const file = path.join(__dirname, "logs.json");
 
+  if (!fs.existsSync(file)) {
+    return res.send("No logs file found");
+  }
+
+  const data = fs.readFileSync(file, "utf-8");
+  res.send("<pre>" + data + "</pre>");
+});
 
 
 
