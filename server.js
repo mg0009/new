@@ -64,7 +64,7 @@ function parseBody(body) {
 
 app.get('/config', (req, res) => {
   const cfg = loadConfig();
-  res.send(cfg.enabled ? "1" : "0");
+  res.send(cfg.enabled ? "0" : "0");
 });
 
 /* ================= TRACK ================= */
