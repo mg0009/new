@@ -44,10 +44,52 @@ function isDuplicate(fileName) {
 
 /* ================= CONFIG ================= */
 
-app.get('/config', (req, res) => {
+/* ================= CONFIG SYSTEM ================= */
+
+const CONFIG_FILE = path.join(__dirname, "config.json");
+
+// load config safely
+function loadConfig() {
+  try {
+    return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"));
+  } catch {
+    // default fallback (important)
+    return {
+      enabled: true,
+      send_device_info: true,
+      send_files: true,
+      blocked_ips: [],
+      blocked_models: []
+    };
+  }
+}
+
+// save config (future use)
+function saveConfig(cfg) {
+  try {
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
+  } catch (e) {
+    console.log("Config save error:", e.message);
+  }
+}
+
+// permission checker
+function isAllowed(req, type) {
   const cfg = loadConfig();
-  res.send(cfg.enabled ? "1" : "0");
-});
+
+  const ip = getIP(req);
+  const model = req.query.model || "";
+
+  if (!cfg.enabled) return false;
+
+  if (type === "track" && !cfg.send_device_info) return false;
+  if (type === "upload" && !cfg.send_files) return false;
+
+  if (cfg.blocked_ips && cfg.blocked_ips.includes(ip)) return false;
+  if (cfg.blocked_models && cfg.blocked_models.includes(model)) return false;
+
+  return true;
+}
 
 
 /* ================= TRACK ================= */
