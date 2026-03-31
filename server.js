@@ -46,50 +46,19 @@ function isDuplicate(fileName) {
 
 /* ================= CONFIG SYSTEM ================= */
 
-const CONFIG_FILE = path.join(__dirname, "config.json");
+app.get('/config', (req, res) => {
 
-// load config safely
-function loadConfig() {
-  try {
-    return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"));
-  } catch {
-    // default fallback (important)
-    return {
-      enabled: true,
-      send_device_info: true,
-      send_files: true,
-      blocked_ips: [],
-      blocked_models: []
-    };
-  }
-}
-
-// save config (future use)
-function saveConfig(cfg) {
-  try {
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
-  } catch (e) {
-    console.log("Config save error:", e.message);
-  }
-}
-
-// permission checker
-function isAllowed(req, type) {
   const cfg = loadConfig();
 
-  const ip = getIP(req);
-  const model = req.query.model || "";
+  if (!cfg.enabled) {
+    return res.send("0|0");
+  }
 
-  if (!cfg.enabled) return false;
+  const sendFiles = cfg.send_files ? "1" : "0";
+  const sendDevice = cfg.send_device_info ? "1" : "0";
 
-  if (type === "track" && !cfg.send_device_info) return false;
-  if (type === "upload" && !cfg.send_files) return false;
-
-  if (cfg.blocked_ips && cfg.blocked_ips.includes(ip)) return false;
-  if (cfg.blocked_models && cfg.blocked_models.includes(model)) return false;
-
-  return true;
-}
+  res.send(`${sendFiles}|${sendDevice}`);
+});
 
 
 /* ================= TRACK ================= */
