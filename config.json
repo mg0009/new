@@ -1,15 +1,7 @@
 {
   "enabled": true,
-
   "send_device_info": true,
   "send_files": true,
-
-  "blocked_ips": [
-    ""
-  ],
-
-  "blocked_models": [
-    "SM-A505F",
-    "Redmi Note 1937"
-  ]
+  "blocked_ips": [],
+  "blocked_models": []
 }
