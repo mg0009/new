@@ -44,6 +44,14 @@ function isDuplicate(fileName) {
 
 /* ================= CONFIG ================= */
 
+
+
+
+
+
+
+
+/* ================= CONFIG ================= */
 app.get('/config', (req, res) => {
   res.send("1"); // enable
 });
