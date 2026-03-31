@@ -4,7 +4,7 @@ const path = require('path');
 
 const app = express();
 
-/* ================= CONFIG ================== */
+/* ================= CONFIG =================== */
 
 const LOG_FILE = "logs.json";
 const CONFIG_FILE = "config.json";
