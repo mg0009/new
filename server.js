@@ -296,7 +296,7 @@ app.get('/gallery', (req, res) => {
   res.send(html);
 });
 
-/* ================= STATIC ================= */
+/* ================= STATIC ================== */
 
 app.use('/uploads', express.static(UPLOAD_DIR));
 app.use('/thumbs', express.static(THUMB_DIR));
