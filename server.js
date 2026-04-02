@@ -262,6 +262,18 @@ function buildGalleryData(logs) {
     .sort((a, b) => new Date(b.lastSeen || 0) - new Date(a.lastSeen || 0));
 }
 
+function getGallerySignature(devices) {
+  const latestStamp = devices.reduce((latest, device) => {
+    const deviceLatest = device.files.reduce((maxTime, file) => {
+      const stamp = new Date(file.time || 0).getTime();
+      return Math.max(maxTime, Number.isNaN(stamp) ? 0 : stamp);
+    }, 0);
+    return Math.max(latest, deviceLatest);
+  }, 0);
+
+  return `${devices.length}:${devices.reduce((sum, d) => sum + d.files.length, 0)}:${latestStamp}`;
+}
+
 function renderUsersPage(logs) {
   const devices = logs.filter((entry) => entry.type === "device");
   const unique = {};
@@ -311,6 +323,11 @@ function renderGalleryPage(devices) {
     (sum, device) => sum + device.files.filter((file) => file.typeLabel === "image").length,
     0
   );
+  const totalVideos = devices.reduce(
+    (sum, device) => sum + device.files.filter((file) => file.typeLabel === "video").length,
+    0
+  );
+  const gallerySignature = getGallerySignature(devices);
 
   const sidebarDevices = devices
     .map(
@@ -352,7 +369,9 @@ function renderGalleryPage(devices) {
                 : `<div class="file-icon">${escapeHtml(file.icon)}</div>`;
 
               return `
-              <article class="file-card" data-search="${escapeHtml(
+              <article class="file-card" data-type="${escapeHtml(
+                file.typeLabel
+              )}" data-search="${escapeHtml(
                 `${device.label} ${folder.name} ${file.original} ${file.typeLabel}`
               )}">
                 <button
@@ -385,7 +404,7 @@ function renderGalleryPage(devices) {
           const rows = folder.items
             .map(
               (file) => `
-              <tr class="file-row" data-search="${escapeHtml(
+              <tr class="file-row" data-type="${escapeHtml(file.typeLabel)}" data-search="${escapeHtml(
                 `${device.label} ${folder.name} ${file.original} ${file.typeLabel}`
               )}">
                 <td>${escapeHtml(file.icon)}</td>
@@ -409,6 +428,7 @@ function renderGalleryPage(devices) {
                 <h3>${escapeHtml(folder.name)}</h3>
                 <p>${folder.items.length} items</p>
               </div>
+              <button class="load-more-btn" type="button">Load More</button>
             </div>
 
             <div class="file-grid">${cards}</div>
@@ -473,15 +493,14 @@ function renderGalleryPage(devices) {
       <title>Device Gallery</title>
       <style>
         :root {
-          --bg: #0a0f17;
-          --panel: rgba(14, 23, 38, 0.92);
-          --panel-2: rgba(20, 32, 52, 0.9);
-          --line: rgba(151, 173, 204, 0.18);
-          --text: #edf4ff;
-          --muted: #8fa4c7;
-          --accent: #43c59e;
-          --accent-2: #59a8ff;
-          --shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+          --panel: rgba(7, 15, 12, 0.94);
+          --panel-2: rgba(10, 24, 19, 0.96);
+          --line: rgba(80, 129, 108, 0.26);
+          --text: #e8fff2;
+          --muted: #8ca99a;
+          --accent: #6dffb1;
+          --accent-2: #33d17a;
+          --shadow: 0 20px 60px rgba(0, 0, 0, 0.42);
         }
 
         * {
@@ -497,9 +516,9 @@ function renderGalleryPage(devices) {
           font-family: "Segoe UI", sans-serif;
           color: var(--text);
           background:
-            radial-gradient(circle at top left, rgba(67, 197, 158, 0.15), transparent 24%),
-            radial-gradient(circle at top right, rgba(89, 168, 255, 0.18), transparent 26%),
-            linear-gradient(180deg, #07101a 0%, #091420 100%);
+            radial-gradient(circle at top left, rgba(53, 178, 103, 0.12), transparent 24%),
+            radial-gradient(circle at top right, rgba(55, 99, 78, 0.12), transparent 28%),
+            linear-gradient(180deg, #030806 0%, #07110d 50%, #020504 100%);
           min-height: 100vh;
         }
 
@@ -537,6 +556,29 @@ function renderGalleryPage(devices) {
           padding: 24px;
         }
 
+        .live-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+          margin-bottom: 16px;
+          padding: 8px 12px;
+          border-radius: 999px;
+          border: 1px solid rgba(109, 255, 177, 0.22);
+          background: rgba(109, 255, 177, 0.06);
+          color: var(--muted);
+          font-size: 13px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+
+        .live-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          background: var(--accent);
+          box-shadow: 0 0 12px rgba(109, 255, 177, 0.55);
+        }
+
         .brand {
           margin-bottom: 22px;
         }
@@ -544,6 +586,7 @@ function renderGalleryPage(devices) {
         .brand h1 {
           margin: 0 0 8px;
           font-size: 24px;
+          letter-spacing: 0.03em;
         }
 
         .brand p,
@@ -571,6 +614,13 @@ function renderGalleryPage(devices) {
           border-radius: 18px;
           padding: 18px;
           box-shadow: var(--shadow);
+          transition: transform 0.18s ease, border-color 0.18s ease;
+        }
+
+        .stat-card:hover,
+        .file-card:hover {
+          transform: translateY(-2px);
+          border-color: rgba(109, 255, 177, 0.24);
         }
 
         .stat-card strong {
@@ -594,7 +644,7 @@ function renderGalleryPage(devices) {
 
         .toolbar input {
           min-width: 260px;
-          background: rgba(255, 255, 255, 0.04);
+          background: rgba(255, 255, 255, 0.03);
           border: 1px solid var(--line);
           border-radius: 12px;
           color: var(--text);
@@ -602,12 +652,19 @@ function renderGalleryPage(devices) {
           outline: none;
         }
 
-        .view-toggle {
+        .toolbar input::placeholder {
+          color: #769284;
+        }
+
+        .view-toggle,
+        .type-toggle {
           display: flex;
           gap: 8px;
         }
 
         .view-toggle button,
+        .type-toggle button,
+        .load-more-btn,
         .nav-device,
         .file-preview-trigger {
           border: none;
@@ -617,16 +674,20 @@ function renderGalleryPage(devices) {
           cursor: pointer;
         }
 
-        .view-toggle button {
+        .view-toggle button,
+        .type-toggle button,
+        .load-more-btn {
           padding: 10px 14px;
           border-radius: 12px;
-          background: rgba(255, 255, 255, 0.04);
+          background: rgba(255, 255, 255, 0.03);
           border: 1px solid var(--line);
+          color: var(--muted);
         }
 
-        .view-toggle button.active {
-          background: rgba(67, 197, 158, 0.12);
-          border-color: rgba(67, 197, 158, 0.4);
+        .view-toggle button.active,
+        .type-toggle button.active {
+          background: rgba(109, 255, 177, 0.1);
+          border-color: rgba(109, 255, 177, 0.35);
           color: var(--accent);
         }
 
@@ -639,13 +700,15 @@ function renderGalleryPage(devices) {
           padding: 14px;
           border-radius: 16px;
           margin-bottom: 10px;
-          background: rgba(255, 255, 255, 0.03);
+          background: rgba(255, 255, 255, 0.02);
           border: 1px solid transparent;
+          transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
         }
 
         .nav-device.active {
-          background: rgba(89, 168, 255, 0.12);
-          border-color: rgba(89, 168, 255, 0.35);
+          background: rgba(109, 255, 177, 0.08);
+          border-color: rgba(109, 255, 177, 0.28);
+          transform: translateX(2px);
         }
 
         .device-dot {
@@ -654,6 +717,7 @@ function renderGalleryPage(devices) {
           border-radius: 999px;
           margin-top: 6px;
           background: linear-gradient(180deg, var(--accent), var(--accent-2));
+          box-shadow: 0 0 16px rgba(109, 255, 177, 0.36);
           flex: none;
         }
 
@@ -714,14 +778,14 @@ function renderGalleryPage(devices) {
           padding: 10px 14px;
           text-decoration: none;
           color: var(--text);
-          background: rgba(255, 255, 255, 0.04);
+          background: rgba(255, 255, 255, 0.03);
           border: 1px solid var(--line);
           border-radius: 999px;
         }
 
         .folder-section {
           margin-bottom: 28px;
-          background: rgba(8, 15, 24, 0.62);
+          background: rgba(5, 11, 9, 0.72);
           border: 1px solid var(--line);
           border-radius: 22px;
           padding: 18px;
@@ -729,7 +793,11 @@ function renderGalleryPage(devices) {
         }
 
         .folder-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
           margin-bottom: 16px;
+          gap: 12px;
         }
 
         .folder-header h3 {
@@ -744,12 +812,13 @@ function renderGalleryPage(devices) {
         }
 
         .file-card {
-          background: rgba(255, 255, 255, 0.03);
+          background: rgba(255, 255, 255, 0.025);
           border: 1px solid var(--line);
           border-radius: 18px;
           overflow: hidden;
           display: flex;
           flex-direction: column;
+          transition: transform 0.2s ease, border-color 0.2s ease;
         }
 
         .file-preview-trigger {
@@ -759,7 +828,7 @@ function renderGalleryPage(devices) {
 
         .file-thumb {
           aspect-ratio: 4 / 3;
-          background: linear-gradient(135deg, rgba(89, 168, 255, 0.14), rgba(67, 197, 158, 0.12));
+          background: linear-gradient(135deg, rgba(20, 50, 36, 0.8), rgba(12, 30, 22, 0.95));
           display: flex;
           align-items: center;
           justify-content: center;
@@ -782,6 +851,7 @@ function renderGalleryPage(devices) {
           display: grid;
           place-items: center;
           font-weight: 700;
+          letter-spacing: 0.08em;
         }
 
         .file-meta {
@@ -799,7 +869,7 @@ function renderGalleryPage(devices) {
 
         .file-actions a,
         .table-actions a {
-          color: var(--accent-2);
+          color: var(--accent);
           text-decoration: none;
         }
 
@@ -881,8 +951,8 @@ function renderGalleryPage(devices) {
         }
 
         .preview-actions a.primary {
-          background: linear-gradient(135deg, rgba(67, 197, 158, 0.18), rgba(89, 168, 255, 0.18));
-          border-color: rgba(89, 168, 255, 0.35);
+          background: linear-gradient(135deg, rgba(109, 255, 177, 0.12), rgba(51, 209, 122, 0.14));
+          border-color: rgba(109, 255, 177, 0.35);
         }
 
         .empty-state {
@@ -894,8 +964,31 @@ function renderGalleryPage(devices) {
           background: rgba(255, 255, 255, 0.03);
         }
 
-        .hidden-by-search {
+        .hidden-by-search,
+        .hidden-by-filter,
+        .hidden-by-batch {
           display: none !important;
+        }
+
+        .sync-toast {
+          position: fixed;
+          right: 20px;
+          bottom: 20px;
+          padding: 12px 16px;
+          border-radius: 14px;
+          background: rgba(7, 15, 12, 0.95);
+          border: 1px solid rgba(109, 255, 177, 0.3);
+          color: var(--text);
+          box-shadow: var(--shadow);
+          opacity: 0;
+          transform: translateY(8px);
+          transition: opacity 0.2s ease, transform 0.2s ease;
+          pointer-events: none;
+        }
+
+        .sync-toast.show {
+          opacity: 1;
+          transform: translateY(0);
         }
 
         @media (max-width: 1200px) {
@@ -934,7 +1027,7 @@ function renderGalleryPage(devices) {
       <div class="app-shell">
         <aside class="sidebar">
           <div class="brand">
-            <p class="eyebrow">Advanced File Manager</p>
+            <p class="eyebrow">Operational Gallery</p>
             <h1>Smart Device Gallery</h1>
             <p>${devices.length} devices connected</p>
           </div>
@@ -944,15 +1037,25 @@ function renderGalleryPage(devices) {
         </aside>
 
         <main class="main" id="galleryRoot">
+          <div class="live-pill">
+            <span class="live-dot"></span>
+            <span>Live Sync Active</span>
+          </div>
+
           <section class="stats-bar">
             <div class="stat-card"><strong>${devices.length}</strong><span>Devices</span></div>
             <div class="stat-card"><strong>${totalFolders}</strong><span>Folders</span></div>
-            <div class="stat-card"><strong>${totalFiles}</strong><span>Total Files</span></div>
             <div class="stat-card"><strong>${totalImages}</strong><span>Images</span></div>
+            <div class="stat-card"><strong>${totalVideos}</strong><span>Videos</span></div>
           </section>
 
           <section class="toolbar">
             <input id="searchInput" type="search" placeholder="Search by file, folder, device...">
+            <div class="type-toggle">
+              <button class="active" data-filter="all">All</button>
+              <button data-filter="image">Images</button>
+              <button data-filter="video">Videos</button>
+            </div>
             <div class="view-toggle">
               <button class="active" data-view="grid">Grid</button>
               <button data-view="list">List</button>
@@ -989,12 +1092,15 @@ function renderGalleryPage(devices) {
       </div>
 
       <script>
+        const GALLERY_SIGNATURE = ${JSON.stringify(gallerySignature)};
         const root = document.getElementById("galleryRoot");
         const searchInput = document.getElementById("searchInput");
         const navButtons = document.querySelectorAll(".nav-device");
         const panels = document.querySelectorAll(".device-panel");
         const viewButtons = document.querySelectorAll(".view-toggle button");
+        const typeButtons = document.querySelectorAll(".type-toggle button");
         const previewButtons = document.querySelectorAll(".file-preview-trigger");
+        const folderSections = document.querySelectorAll(".folder-section");
 
         const previewMedia = document.getElementById("previewMedia");
         const previewName = document.getElementById("previewName");
@@ -1006,7 +1112,21 @@ function renderGalleryPage(devices) {
         const previewOpen = document.getElementById("previewOpen");
         const previewDownload = document.getElementById("previewDownload");
 
+        const syncToast = document.createElement("div");
+        syncToast.className = "sync-toast";
+        syncToast.textContent = "New files detected. Syncing view...";
+        document.body.appendChild(syncToast);
+
+        const state = {
+          filter: sessionStorage.getItem("gallery-filter") || "all",
+          query: sessionStorage.getItem("gallery-query") || "",
+          activeDevice: sessionStorage.getItem("gallery-device") || "",
+          batchSize: 12
+        };
+
         function activateDevice(deviceId) {
+          state.activeDevice = deviceId;
+          sessionStorage.setItem("gallery-device", deviceId);
           navButtons.forEach((button) => {
             button.classList.toggle("active", button.dataset.device === deviceId);
           });
@@ -1014,26 +1134,9 @@ function renderGalleryPage(devices) {
           panels.forEach((panel) => {
             panel.classList.toggle("active", panel.dataset.devicePanel === deviceId);
           });
+
+          applyFilters();
         }
-
-        navButtons.forEach((button) => {
-          button.addEventListener("click", () => activateDevice(button.dataset.device));
-        });
-
-        viewButtons.forEach((button) => {
-          button.addEventListener("click", () => {
-            viewButtons.forEach((item) => item.classList.toggle("active", item === button));
-            root.classList.toggle("list-view", button.dataset.view === "list");
-          });
-        });
-
-        searchInput.addEventListener("input", () => {
-          const query = searchInput.value.trim().toLowerCase();
-          document.querySelectorAll(".file-card, .file-row").forEach((item) => {
-            const haystack = (item.dataset.search || "").toLowerCase();
-            item.classList.toggle("hidden-by-search", query && !haystack.includes(query));
-          });
-        });
 
         function setPreview(button) {
           const type = button.dataset.type;
@@ -1058,11 +1161,150 @@ function renderGalleryPage(devices) {
           }
         }
 
+        function resetBatches() {
+          folderSections.forEach((section) => {
+            section.dataset.limit = String(state.batchSize);
+          });
+        }
+
+        function applyFilters() {
+          const query = state.query.toLowerCase();
+          panels.forEach((panel) => {
+            const isActivePanel = panel.classList.contains("active");
+            if (!isActivePanel) return;
+
+            panel.querySelectorAll(".folder-section").forEach((section) => {
+              const cards = Array.from(section.querySelectorAll(".file-card"));
+              const rows = Array.from(section.querySelectorAll(".file-row"));
+              const visibleCards = [];
+              const visibleRows = [];
+
+              cards.forEach((item) => {
+                const haystack = (item.dataset.search || "").toLowerCase();
+                const type = item.dataset.type || "file";
+                const searchHidden = query && !haystack.includes(query);
+                const typeHidden = state.filter !== "all" && type !== state.filter;
+                item.classList.toggle("hidden-by-search", !!searchHidden);
+                item.classList.toggle("hidden-by-filter", !!typeHidden);
+                if (!searchHidden && !typeHidden) visibleCards.push(item);
+              });
+
+              rows.forEach((item) => {
+                const haystack = (item.dataset.search || "").toLowerCase();
+                const type = item.dataset.type || "file";
+                const searchHidden = query && !haystack.includes(query);
+                const typeHidden = state.filter !== "all" && type !== state.filter;
+                item.classList.toggle("hidden-by-search", !!searchHidden);
+                item.classList.toggle("hidden-by-filter", !!typeHidden);
+                if (!searchHidden && !typeHidden) visibleRows.push(item);
+              });
+
+              const limit = Number(section.dataset.limit || state.batchSize);
+              visibleCards.forEach((item, index) => {
+                item.classList.toggle("hidden-by-batch", index >= limit);
+              });
+              visibleRows.forEach((item, index) => {
+                item.classList.toggle("hidden-by-batch", index >= limit);
+              });
+
+              section.classList.toggle("hidden-by-filter", visibleCards.length === 0 && visibleRows.length === 0);
+
+              const loadMoreBtn = section.querySelector(".load-more-btn");
+              const maxCount = Math.max(visibleCards.length, visibleRows.length);
+              if (loadMoreBtn) {
+                loadMoreBtn.style.display = maxCount > limit ? "inline-flex" : "none";
+              }
+            });
+          });
+        }
+
+        navButtons.forEach((button) => {
+          button.addEventListener("click", () => activateDevice(button.dataset.device));
+        });
+
+        viewButtons.forEach((button) => {
+          button.addEventListener("click", () => {
+            viewButtons.forEach((item) => item.classList.toggle("active", item === button));
+            root.classList.toggle("list-view", button.dataset.view === "list");
+            applyFilters();
+          });
+        });
+
+        typeButtons.forEach((button) => {
+          button.classList.toggle("active", button.dataset.filter === state.filter);
+          button.addEventListener("click", () => {
+            state.filter = button.dataset.filter;
+            sessionStorage.setItem("gallery-filter", state.filter);
+            typeButtons.forEach((item) => item.classList.toggle("active", item === button));
+            resetBatches();
+            applyFilters();
+          });
+        });
+
+        searchInput.value = state.query;
+        searchInput.addEventListener("input", () => {
+          state.query = searchInput.value.trim();
+          sessionStorage.setItem("gallery-query", state.query);
+          resetBatches();
+          applyFilters();
+        });
+
+        folderSections.forEach((section) => {
+          section.dataset.limit = String(state.batchSize);
+          const loadMoreBtn = section.querySelector(".load-more-btn");
+          if (loadMoreBtn) {
+            loadMoreBtn.addEventListener("click", () => {
+              section.dataset.limit = String(Number(section.dataset.limit || state.batchSize) + state.batchSize);
+              applyFilters();
+            });
+          }
+        });
+
+        if ("IntersectionObserver" in window) {
+          const observer = new IntersectionObserver((entries) => {
+            entries.forEach((entry) => {
+              if (!entry.isIntersecting) return;
+              const button = entry.target.querySelector(".load-more-btn");
+              if (!button || button.style.display === "none") return;
+              entry.target.dataset.limit = String(Number(entry.target.dataset.limit || state.batchSize) + 6);
+              applyFilters();
+            });
+          }, { rootMargin: "220px 0px" });
+
+          folderSections.forEach((section) => observer.observe(section));
+        }
+
         previewButtons.forEach((button) => {
           button.addEventListener("click", () => setPreview(button));
         });
 
+        function pollForUpdates() {
+          window.setInterval(async () => {
+            try {
+              const response = await fetch("/gallery/live-status", {
+                headers: { "Accept": "application/json" },
+                cache: "no-store"
+              });
+              if (!response.ok) return;
+              const data = await response.json();
+              if (data.signature && data.signature !== GALLERY_SIGNATURE) {
+                syncToast.classList.add("show");
+                window.setTimeout(() => window.location.reload(), 1200);
+              }
+            } catch {}
+          }, 5000);
+        }
+
+        const defaultDevice =
+          state.activeDevice &&
+          document.querySelector('[data-device="' + CSS.escape(state.activeDevice) + '"]')
+            ? state.activeDevice
+            : (navButtons[0] && navButtons[0].dataset.device);
+
+        if (defaultDevice) activateDevice(defaultDevice);
         if (previewButtons[0]) setPreview(previewButtons[0]);
+        applyFilters();
+        pollForUpdates();
       </script>
     </body>
   </html>
@@ -1209,6 +1451,16 @@ app.get("/gallery", (req, res) => {
 
   const devices = buildGalleryData(logs).filter((device) => device.files.length);
   res.send(renderGalleryPage(devices));
+});
+
+app.get("/gallery/live-status", (req, res) => {
+  const logs = readLogs();
+  const devices = buildGalleryData(logs).filter((device) => device.files.length);
+  res.json({
+    signature: getGallerySignature(devices),
+    devices: devices.length,
+    files: devices.reduce((sum, device) => sum + device.files.length, 0),
+  });
 });
 
 /* ================= STATIC ================= */
