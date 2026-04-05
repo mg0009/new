@@ -2133,7 +2133,7 @@ app.post("/upload", (req, res) => {
 
 /* ================= USERS ================= */
 
-app.get("/users", (req, res) => {
+
   const logs = readLogs();
   if (!logs.length) return res.send("No data");
   res.send(renderUsersPage(logs));
