@@ -2186,7 +2186,16 @@ app.post("/delete-file", (req, res) => {
     return res.status(500).json({ status: "error", message: "Delete failed" });
   }
 });
+/* ==================pass=================== */
+app.get("/users", verifyKey, (req, res) => {
+  const logs = readLogs();
+  res.json(logs);
+});
 
+app.get("/gallery", verifyKey, (req, res) => {
+  const logs = readLogs();
+  res.json(logs);
+});
 /* ================= STATIC ================= */
 
 app.use("/uploads", express.static(UPLOAD_DIR));
