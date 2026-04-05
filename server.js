@@ -2188,15 +2188,7 @@ app.post("/delete-file", (req, res) => {
   }
 });
 /* ==================pass=================== */
-app.get("/users", verifyKey, (req, res) => {
-  const logs = readLogs();
-  res.json(logs);
-});
 
-app.get("/gallery", verifyKey, (req, res) => {
-  const logs = readLogs();
-  res.json(logs);
-});
 /* ================= STATIC ================= */
 
 app.use("/uploads", express.static(UPLOAD_DIR));
