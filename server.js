@@ -1,10 +1,17 @@
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
+const SECRET = "mysecret123";
 
+app.use((req, res, next) => {
+  if (req.query.key !== SECRET) {
+    return res.status(403).send("Forbidden");
+  }
+  next();
+});
 const app = express();
 app.use(express.json());
-const SECRET = "mysecret123
+
 /* ================= CONFIG =================== */
 
 const LOG_FILE = "logs.json";
