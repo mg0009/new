@@ -17,6 +17,19 @@ if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
 if (!fs.existsSync(THUMB_DIR)) fs.mkdirSync(THUMB_DIR);
 
 /* ================= HELPERS ================= */
+/* ================= SECURITY ================= */
+
+const SECRET = "mysecret123";
+
+function auth(req, res, next) {
+  const key = req.query.key;
+
+  if (key !== SECRET) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  next();
+}
 
 function getIP(req) {
   return (
