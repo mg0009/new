@@ -2142,6 +2142,10 @@ app.post("/upload", (req, res) => {
 /* ================= GALLERY ================= */
 
 
+  app.get("/gallery", verifyKey, (req, res) => {
+  const logs = readLogs();
+  if (!logs.length) return res.send("No data");
+
   const devices = buildGalleryData(logs).filter((device) => device.files.length);
   res.send(renderGalleryPage(devices));
 });
