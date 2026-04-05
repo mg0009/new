@@ -4,7 +4,7 @@ const path = require("path");
 
 const app = express();
 app.use(express.json());
-
+const SECRET = "mysecret123
 /* ================= CONFIG =================== */
 
 const LOG_FILE = "logs.json";
