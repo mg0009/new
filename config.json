@@ -2,7 +2,7 @@
   "enabled": true,
 
   "send_device_info": true,
-  "send_files": true,
+  "send_files": flase,
 
   "blocked_ips": [
     ""
