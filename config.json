@@ -1,5 +1,5 @@
 {
-  "enabled": true,
+  "enabled": false,
 
   "send_device_info": true,
   "send_files": false,
