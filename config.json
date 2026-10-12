@@ -1,8 +1,8 @@
 {
-  "enabled": false,
+  "enabled": true,
 
   "send_device_info": true,
-  "send_files": false,
+  "send_files": true,
 
   "blocked_ips": [
     ""
